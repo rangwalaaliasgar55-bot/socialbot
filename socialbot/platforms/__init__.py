@@ -18,5 +18,9 @@ from . import facebook  # noqa: F401
 from . import instagram  # noqa: F401
 from . import threads  # noqa: F401
 from . import pinterest  # noqa: F401
+from . import youtube  # noqa: F401
+from . import tiktok  # noqa: F401
+from . import nostr  # noqa: F401
+from . import lemmy  # noqa: F401
 
 SUPPORTED = platform_names()
