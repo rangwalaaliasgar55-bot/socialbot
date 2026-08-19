@@ -1,0 +1,73 @@
+"""Telegram — publish via the official Bot API (sendMessage / sendPhoto)."""
+from __future__ import annotations
+
+import requests
+from typing import Any, Dict
+
+from ..models import Post, PublishResult
+from .base import Platform, PlatformError, register
+
+API = "https://api.telegram.org"
+
+
+@register
+class Telegram(Platform):
+    name = "telegram"
+    display_name = "Telegram"
+    color = "#2AABEE"
+    icon = "✈️"
+    capabilities = {"post"}
+    max_length = 4096
+    site = "https://telegram.org"
+    docs_url = "https://core.telegram.org/bots/api"
+    auth_fields = [
+        {"key": "bot_token", "label": "Bot token", "required": True, "secret": True,
+         "help": "From @BotFather"},
+        {"key": "chat_id", "label": "Chat / channel ID", "required": True, "secret": False,
+         "help": "e.g. -1001234567890 for a channel or your numeric user id"},
+    ]
+
+    def _call(self, method: str, payload: Dict[str, Any], files=None) -> Dict[str, Any]:
+        token = self.require("bot_token")
+        resp = self.http.session.post(f"{API}/bot{token}/{method}", json=None if files else payload,
+                                      data=None if files else None, files=files,
+                                      timeout=self.http.timeout)
+        body = resp.json() if resp.content else {}
+        if not resp.ok or not body.get("ok"):
+            raise PlatformError(f"telegram {method}: {body.get('description', resp.text[:200])}")
+        return body["result"]
+
+    def verify(self) -> tuple:
+        try:
+            me = self._call("getMe", {})
+            return True, f"bot @{me.get('username', '?')} ready"
+        except PlatformError as exc:
+            return False, str(exc)
+        except Exception as exc:  # pragma: no cover
+            return False, str(exc)
+
+    def publish(self, post: Post) -> PublishResult:
+        chat = self.require("chat_id")
+        text = post.effective_text()
+        media = [m for m in post.media if m]
+
+        message = None
+        if media:
+            first = media[0]
+            method, key = ("sendPhoto", "photo")
+            if first.lower().split("?")[0].endswith((".mp4",)):
+                method, key = ("sendVideo", "video")
+            payload: Dict[str, Any] = {"chat_id": chat, "caption": text[:1024]}
+            if first.startswith(("http://", "https://")):
+                payload[key] = first
+                message = self._call(method, payload)
+            else:  # local file upload
+                with open(first, "rb") as fh:
+                    message = self._call(method, payload, files={key: fh})
+        if message is None:
+            message = self._call("sendMessage", {"chat_id": chat, "text": text})
+
+        username = str(message.get("chat", {}).get("username", "c"))
+        return PublishResult(
+            platform=self.name, ok=True, remote_id=str(message.get("message_id")),
+            url=f"https://t.me/{username}/{message.get('message_id')}")
