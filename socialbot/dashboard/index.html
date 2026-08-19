@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SocialBot — scheduler &amp; automation</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg> />
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="logo"><div class="mark">🤖</div> SocialBot</div>
+    <nav id="nav">
+      <a data-view="calendar" class="active">📅 Calendar</a>
+      <a data-view="queue">📮 Queue</a>
+      <a data-view="composer">✍️ Composer</a>
+      <a data-view="accounts">🔌 Accounts</a>
+      <a data-view="bot">🤖 Growth bot</a>
+      <a data-view="analytics">📊 Analytics</a>
+      <a data-view="events">⚡ Activity</a>
+      <a href="/docs" target="_blank">🧩 API docs</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <h1 id="view-title">Calendar</h1>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="pill" id="sched-pill"><span class="dot"></span> scheduler</span>
+        <button class="btn" id="new-post-btn">＋ New post</button>
+      </div>
+    </div>
+
+    <!-- CALENDAR -->
+    <section id="view-calendar">
+      <div class="cal-head">
+        <button class="btn ghost small" id="cal-prev">←</button>
+        <strong id="cal-title" style="text-transform:capitalize"></strong>
+        <button class="btn ghost small" id="cal-next">→</button>
+      </div>
+      <div class="card">
+        <div class="cal" id="cal-grid"></div>
+      </div>
+      <div class="card">
+        <h2>Upcoming</h2>
+        <div id="upcoming"></div>
+      </div>
+    </section>
+
+    <!-- QUEUE -->
+    <section id="view-queue" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">All posts</h2>
+          <div style="display:flex;gap:8px">
+            <select id="queue-filter" style="width:170px">
+              <option value="">All statuses</option>
+              <option>scheduled</option><option>published</option><option>partial</option>
+              <option>failed</option><option>cancelled</option>
+            </select>
+            <button class="btn ghost small" id="tick-now">⏱ Run scheduler tick</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table id="queue-table"></table></div>
+      </div>
+    </section>
+
+    <!-- COMPOSER -->
+    <section id="view-composer" class="hidden">
+      <div class="card composer">
+        <h2>Compose</h2>
+        <textarea id="c-text" placeholder="What do you want to share?"></textarea>
+        <div class="counter" id="c-counter">0 chars</div>
+        <div class="field">
+          <label>Platforms</label>
+          <div class="platforms-pick" id="c-platforms"></div>
+        </div>
+        <div class="form-grid" style="margin-top:10px">
+          <div><label>Media URLs / paths (one per line)</label><textarea id="c-media" style="min-height:60px"></textarea></div>
+          <div>
+            <label>Tag</label><input id="c-tag" placeholder="launch, tips…" />
+            <label style="margin-top:8px">Signature (optional)</label><input id="c-signature" placeholder="— @yourbrand" />
+          </div>
+        </div>
+        <div class="form-grid" style="margin-top:10px">
+          <div><label>Schedule (local time)</label><input id="c-when" type="datetime-local" /></div>
+          <div>
+            <label>Repeat</label>
+            <select id="c-repeat">
+              <option value="">No repeat</option>
+              <option value="daily">Every day</option>
+              <option value="weekly">Every week</option>
+              <option value="interval:3600">Every hour</option>
+            </select>
+            <label style="margin-top:8px">Webhook URL (optional)</label><input id="c-webhook" placeholder="https://…" />
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn" id="c-send-now">🚀 Post now</button>
+          <button class="btn ghost" id="c-schedule">🕓 Schedule</button>
+          <button class="btn ghost" id="c-ai">✨ AI drafts</button>
+          <span class="muted small" style="align-self:center" id="c-msg"></span>
+        </div>
+        <div class="drafts" id="c-drafts"></div>
+      </div>
+    </section>
+
+    <!-- ACCOUNTS -->
+    <section id="view-accounts" class="hidden">
+      <div class="card">
+        <h2>Connected accounts</h2>
+        <p class="muted small" style="margin-bottom:12px">Click a platform to add or edit credentials. Get a demo account by connecting <b>Mock (demo)</b>.</p>
+        <div class="grid cols-4" id="acct-grid"></div>
+      </div>
+    </section>
+
+    <!-- BOT -->
+    <section id="view-bot" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Automation rules</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost small" id="bot-run-all">▶ Run all (dry-run)</button>
+            <button class="btn small" id="bot-new">＋ New rule</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table id="bot-table"></table></div>
+        <p class="muted small" style="margin-top:10px">Rules use official platform APIs only, with per-run &amp; per-hour caps and human-like pacing. New rules start in <b>dry-run</b> — flip it live when you're happy.</p>
+      </div>
+    </section>
+
+    <!-- ANALYTICS -->
+    <section id="view-analytics" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+          <h2 style="margin:0">Overview</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost small" id="an-refresh">↻ Refresh metrics</button>
+            <a class="btn ghost small" href="/api/analytics/export.csv" download>⬇ Export CSV</a>
+          </div>
+        </div>
+        <div class="grid cols-4" id="an-stats"></div>
+      </div>
+      <div class="card">
+        <h2>Engagement by platform</h2>
+        <div class="bars" id="an-bars"></div>
+      </div>
+      <div class="card">
+        <h2>Latest per-post metrics</h2>
+        <div style="overflow-x:auto"><table id="an-table"></table></div>
+      </div>
+    </section>
+
+    <!-- EVENTS -->
+    <section id="view-events" class="hidden">
+      <div class="card">
+        <h2>Activity log</h2>
+        <div style="overflow-x:auto"><table id="events-table"></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- generic modal -->
+<div class="modal-back" id="modal-back">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

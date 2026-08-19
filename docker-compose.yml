@@ -1,0 +1,12 @@
+services:
+  socialbot:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - SOCIALBOT_DB=/data/socialbot.db
+      # - SOCIALBOT_WEBHOOK_URL=https://hooks.example.com/socialbot
+      # - SOCIALBOT_AI_API_KEY=sk-...
+    restart: unless-stopped
