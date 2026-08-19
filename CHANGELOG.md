@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 — 2026-08-19
+
+- **New platforms**: YouTube, TikTok, Nostr, Lemmy (17 total).
+  - **YouTube** — Data API v3 resumable video upload, delete, metrics; OAuth access/refresh tokens.
+  - **TikTok** — Content Posting API (init → chunk upload → poll); requires approved app.
+  - **Nostr** — NIP-01 kind-1 notes to multiple relays; hex/nsec keys; optional coincurve + websocket-client.
+  - **Lemmy** — Create posts, vote, comment, search, metrics on any instance via JWT or login.
+- Docs: credential setup for the four new networks in `docs/ENVIRONMENT.md`.
+- Tests: registry coverage for the new platforms.
+
 ## 1.0.1 — 2026-08-19
 
 - **Reliability**: Guard module-level FastAPI `app` creation so imports / pytest
