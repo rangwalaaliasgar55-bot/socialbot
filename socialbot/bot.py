@@ -11,7 +11,7 @@ import logging
 import random
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .http import HttpClient
@@ -63,7 +63,7 @@ class BotEngine:
 
         dry = rule.dry_run if dry_run is None else dry_run
         acted, skipped, errors = 0, 0, []
-        # keep inside the hourly budget
+        # keep inside the hourly budget (real actions only, dry-runs don't count)
         budget = max(0, rule.limit_per_hour - self._recent_actions(rule))
 
         for item in items:
@@ -104,7 +104,7 @@ class BotEngine:
         self.store.save_rule(rule)
         self.store.log_event("bot.run", f"rule '{rule.name}': {action} x{acted} "
                                         f"({'dry-run' if dry else 'live'}) on {rule.platform}",
-                             {"rule_id": rule.id})
+                             {"rule_id": rule.id, "acted": acted, "dry_run": dry})
         return rule.last_result
 
     def run_all(self, dry_run: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -112,18 +112,31 @@ class BotEngine:
 
     # ---------------------------------------------------------------- helpers
     def _recent_actions(self, rule: BotRule) -> int:
-        """Count actions in the last hour by replaying run timestamps (conservative)."""
+        """Count *live* actions for this rule in the last hour.
+
+        Replayed from the events log (every run logs `acted` + `dry_run`), so
+        repeated runs inside the hour are all counted — unlike a naive
+        "last run only" check this enforces the true per-hour cap.
+        """
+        cutoff = utcnow() - timedelta(hours=1)
         count = 0
-        for rule_like in self.store.list_rules():
-            if rule_like.id == rule.id:
-                last = rule_like.last_run
-                if last:
-                    try:
-                        dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
-                        if dt > datetime.now(timezone.utc) - timedelta(hours=1):
-                            count += (rule_like.last_result or {}).get("acted", 0)
-                    except ValueError:
-                        pass
+        for event in self.store.list_events(limit=500):
+            if event["type"] != "bot.run":
+                continue
+            data = event.get("data") or {}
+            if data.get("rule_id") != rule.id:
+                continue
+            if data.get("dry_run"):
+                continue
+            ts = event.get("ts")
+            if not ts:
+                continue
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if dt > cutoff:
+                count += int(data.get("acted", 0))
         return count
 
     @staticmethod

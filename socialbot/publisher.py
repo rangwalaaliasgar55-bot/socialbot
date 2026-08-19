@@ -29,8 +29,13 @@ class Publisher:
         return (account or {}).get("config", {}).get("signature")
 
     # -------------------------------------------------------------- publish
-    def publish_now(self, post: Post, store: bool = True) -> Post:
-        """Immediately publish *post* to every configured platform it targets."""
+    def publish_now(self, post: Post, store: bool = True,
+                    previous_results: Optional[Dict[str, Dict[str, Any]]] = None) -> Post:
+        """Immediately publish *post* to every configured platform it targets.
+
+        ``previous_results`` (used by :meth:`retry`) keeps earlier successes for
+        platforms not re-attempted, so partial state isn't lost.
+        """
         post.status = PostStatus.PUBLISHING.value
         if store:
             self.store.save_post(post)
@@ -66,6 +71,13 @@ class Publisher:
                     platform=platform_name, ok=False, error=str(exc)).to_dict()
                 log.exception("unexpected publish error on %s", platform_name)
 
+        # keep results from earlier attempts for platforms not in this run
+        for name, prior in (previous_results or {}).items():
+            if name not in results:
+                results[name] = prior
+                if prior.get("ok") and name not in succeeded:
+                    succeeded.append(name)
+
         post.results = results
         post.attempts += 1
         post.published_at = iso(utcnow())
@@ -98,11 +110,34 @@ class Publisher:
             return None
         if post.status not in (PostStatus.FAILED.value, PostStatus.PARTIAL.value):
             return post
+        previous = dict(post.results or {})
         retry_platforms = [p for p in post.platforms
                            if not post.results.get(p, {}).get("ok")]
         post.platforms = retry_platforms or post.platforms
         post.error = None
-        return self.publish_now(post)
+        return self.publish_now(post, previous_results=previous)
+
+    def process_failed(self, limit: int = 20) -> List[Post]:
+        """Autonomously retry failed posts with exponential backoff.
+
+        A failed post is retried once ``2 ** attempts`` minutes have passed since
+        its last attempt (2m, 4m, 8m, … capped at 1h) and attempts remain.
+        """
+        now = utcnow()
+        retried: List[Post] = []
+        for post in self.store.list_posts(limit=2000):
+            if post.status != PostStatus.FAILED.value or post.attempts >= post.max_attempts:
+                continue
+            if len(retried) >= limit:
+                break
+            last = parse_dt(post.published_at) or parse_dt(post.created_at) or now
+            delay = min(60 * (2 ** max(post.attempts, 1)), 3600)
+            if (now - last).total_seconds() < delay:
+                continue
+            retried.append(self.retry(post.id))
+        if retried:
+            log.info("auto-retried %d failed post(s)", len(retried))
+        return [r for r in retried if r]
 
     # ---------------------------------------------------------- recurrence
     def schedule_next_occurrence(self, post: Post) -> Optional[Post]:

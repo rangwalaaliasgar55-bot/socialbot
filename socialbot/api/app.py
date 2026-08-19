@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,7 +34,7 @@ log = logging.getLogger("socialbot.api")
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 SECRET_KEYS = {field["key"] for meta in platform_meta()
                for field in meta["auth_fields"] if field.get("secret")}
-
+API_TOKEN = os.environ.get("SOCIALBOT_API_TOKEN", "").strip()
 
 # --------------------------------------------------------------------- models
 class PostIn(BaseModel):
@@ -47,6 +47,18 @@ class PostIn(BaseModel):
     signature: Optional[str] = None
     webhook_url: Optional[str] = None
     publish_now: bool = False
+
+
+class PostPatch(BaseModel):
+    """Partial update for draft/scheduled posts — only provided fields change."""
+    text: Optional[str] = None
+    platforms: Optional[List[str]] = None
+    media: Optional[List[str]] = None
+    scheduled_at: Optional[str] = None
+    recurrence: Optional[Dict[str, Any]] = None
+    tag: Optional[str] = None
+    signature: Optional[str] = None
+    webhook_url: Optional[str] = None
 
 
 class AccountIn(BaseModel):
@@ -81,6 +93,20 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
                   description="All-in-one social media scheduling & automation bot")
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
                        allow_headers=["*"])
+
+    @app.middleware("http")
+    async def require_token(request: Request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        token = os.environ.get("SOCIALBOT_API_TOKEN", "").strip() or API_TOKEN
+        if not token:
+            return await call_next(request)
+        path = request.url.path
+        if path.startswith("/api/") or path in ("/docs", "/redoc", "/openapi.json"):
+            expected = f"Bearer {token}"
+            if request.headers.get("authorization") != expected:
+                return PlainTextResponse("unauthorized", status_code=401)
+        return await call_next(request)
 
     state: Dict[str, Any] = {"store": store or Store()}
     state["http"] = HttpClient()
@@ -151,13 +177,9 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
 
     @app.delete("/api/posts/{post_id}")
     def delete_post(post_id: str):
-        post = state["store"].get_post(post_id)
-        if not post:
+        if not state["store"].delete_post(post_id):
             raise HTTPException(404, "post not found")
-        if post.status == PostStatus.SCHEDULED.value:
-            post.status = PostStatus.CANCELLED.value
-            state["store"].save_post(post)
-        return {"ok": True, "status": post.status}
+        return {"ok": True, "deleted": post_id}
 
     @app.post("/api/posts/{post_id}/publish")
     def publish_post(post_id: str):
@@ -172,6 +194,65 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         if not result:
             raise HTTPException(404, "post not found")
         return result.to_dict()
+
+    @app.post("/api/posts/{post_id}/remote")
+    def delete_remote(post_id: str):
+        """Delete the post from every platform that supports remote deletion."""
+        post = state["store"].get_post(post_id)
+        if not post:
+            raise HTTPException(404, "post not found")
+        outcomes = {}
+        for platform_name, result in (post.results or {}).items():
+            if not result.get("ok") or not result.get("remote_id"):
+                continue
+            try:
+                account = state["store"].get_account(platform_name)
+                platform = create_platform(platform_name,
+                                           (account or {}).get("config", {}), state["http"])
+                if "delete" not in platform.capabilities:
+                    outcomes[platform_name] = "not supported"
+                    continue
+                platform.delete(result["remote_id"])
+                outcomes[platform_name] = "deleted"
+            except PlatformError as exc:
+                outcomes[platform_name] = f"error: {exc}"
+        if not outcomes:
+            raise HTTPException(400, "no published platforms with remote delete support")
+        state["store"].log_event("post.delete_remote", f"remote delete for {post.id}: {outcomes}")
+        return {"ok": True, "outcomes": outcomes}
+
+    @app.patch("/api/posts/{post_id}")
+    def patch_post(post_id: str, body: PostPatch):
+        """Edit a draft/scheduled post (text, platforms, media, schedule, tag…)."""
+        post = state["store"].get_post(post_id)
+        if not post:
+            raise HTTPException(404, "post not found")
+        if post.status not in (PostStatus.DRAFT.value, PostStatus.SCHEDULED.value):
+            raise HTTPException(400, "only draft or scheduled posts can be edited")
+        if body.text is not None:
+            post.text = body.text
+        if body.platforms is not None:
+            unknown = [p for p in body.platforms if p not in platform_names()]
+            if unknown:
+                raise HTTPException(422, f"unknown platforms: {', '.join(unknown)}")
+            if not body.platforms:
+                raise HTTPException(422, "choose at least one platform")
+            post.platforms = body.platforms
+        if body.media is not None:
+            post.media = body.media
+        if body.tag is not None:
+            post.tag = body.tag or None
+        if body.signature is not None:
+            post.signature = body.signature or None
+        if body.webhook_url is not None:
+            post.webhook_url = body.webhook_url or None
+        if body.recurrence is not None:
+            post.recurrence = body.recurrence
+        if body.scheduled_at is not None:
+            scheduled = parse_dt(body.scheduled_at)
+            post.scheduled_at = iso(scheduled) if scheduled else None
+        state["store"].save_post(post)
+        return post.to_dict()
 
     @app.post("/api/scheduler/{action}")
     def scheduler_control(action: str):
@@ -236,6 +317,16 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         state["store"].save_rule(rule)
         return rule.to_dict()
 
+    @app.patch("/api/bot/rules/{rule_id}")
+    def patch_rule(rule_id: str, body: RuleIn):
+        rule = state["store"].get_rule(rule_id)
+        if not rule:
+            raise HTTPException(404, "rule not found")
+        for key, value in body.model_dump().items():
+            setattr(rule, key, value)
+        state["store"].save_rule(rule)
+        return rule.to_dict()
+
     @app.post("/api/bot/rules/{rule_id}/run")
     def run_rule(rule_id: str, dry_run: Optional[bool] = None):
         rule = state["store"].get_rule(rule_id)
@@ -286,4 +377,4 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
 if os.environ.get("SOCIALBOT_NO_AUTO_APP") or "pytest" in sys.modules:
     app = None  # type: ignore
 else:
-    app = create_app()
+    app = create_app(with_scheduler=os.environ.get("SOCIALBOT_DISABLE_SCHEDULER") != "1")

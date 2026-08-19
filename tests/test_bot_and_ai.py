@@ -63,6 +63,21 @@ def test_hourly_budget_limits_actions(store):
     assert result["acted"] == 2  # capped by hourly budget
 
 
+def test_hourly_cap_applies_across_runs(store):
+    """The per-hour cap must count ALL live actions in the last hour (not just the
+    latest run) — running a rule repeatedly must not exceed limit_per_hour."""
+    store.save_account("mock", {})
+    rule = BotRule(name="capped", platform="mock", action="like", trigger_value="x",
+                   limit_per_run=10, limit_per_hour=4, dry_run=False)
+    store.save_rule(rule)
+    engine = BotEngine(store)
+    first = engine.run_rule(rule)
+    assert first["acted"] == 4
+    second = engine.run_rule(rule)
+    assert second["acted"] == 0          # budget already spent this hour
+    assert second["found"] == 10         # search still ran, actions were capped
+
+
 # ---------------------------------------------------------------------- AI
 def test_offline_generation():
     drafts = generate_offline("python automation", n=3)

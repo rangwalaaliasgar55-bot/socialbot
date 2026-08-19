@@ -1,12 +1,15 @@
 """Shared test fixtures: temp store, fake HTTP session, test API client."""
 from __future__ import annotations
 
-import sys
+import os
+
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, "/home/user/socialbot") if "/home/user/socialbot" not in sys.path else None
+# keep imports/background work out of the repo dir & off the test run
+os.environ.setdefault("SOCIALBOT_DB", ":memory:")
+os.environ.setdefault("SOCIALBOT_DISABLE_SCHEDULER", "1")
 
 from socialbot.http import HttpClient  # noqa: E402
 from socialbot.storage import Store  # noqa: E402

@@ -1,18 +1,22 @@
-"""Scheduler — ticks every N seconds, publishes due posts and refreshes metrics.
+"""Scheduler — ticks every N seconds, publishes due posts, auto-retries failed
+ones and refreshes metrics.
 
 Runs either standalone (``socialbot run``) or embedded in the API server so the
-web dashboard is always in sync.
+web dashboard is always in sync. Optional: run growth-bot rules on an interval
+via ``SOCIALBOT_BOT_INTERVAL`` (minutes, 0 = off).
 """
 from __future__ import annotations
 
 import logging
+import os
 import threading
-from typing import Optional, Set
+from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from .analytics import refresh_metrics
+from .bot import BotEngine
 from .models import iso, utcnow
 from .publisher import Publisher
 from .storage import Store
@@ -21,6 +25,7 @@ log = logging.getLogger("socialbot.scheduler")
 
 TICK_SECONDS = 20
 METRICS_MINUTES = 360  # refresh engagement numbers every 6h
+BOT_MINUTES = int(os.environ.get("SOCIALBOT_BOT_INTERVAL", "0") or 0)
 
 
 class Scheduler:
@@ -47,11 +52,17 @@ class Scheduler:
             self._scheduler.add_job(self._refresh_metrics,
                                     IntervalTrigger(minutes=METRICS_MINUTES),
                                     id="metrics", max_instances=1, coalesce=True)
+            if BOT_MINUTES > 0:
+                self._scheduler.add_job(self._run_bot_rules,
+                                        IntervalTrigger(minutes=BOT_MINUTES),
+                                        id="bot", max_instances=1, coalesce=True)
             self._scheduler.start()
             self.running = True
             self.store.log_event("scheduler.start", f"scheduler running "
-                                                    f"(tick={self.tick_seconds}s)")
-            log.info("scheduler started (tick=%ss)", self.tick_seconds)
+                                                    f"(tick={self.tick_seconds}s"
+                                                    f"{f', bot every {BOT_MINUTES}m' if BOT_MINUTES else ''})")
+            log.info("scheduler started (tick=%ss%s)", self.tick_seconds,
+                     f", bot every {BOT_MINUTES}m" if BOT_MINUTES else "")
 
     def stop(self) -> None:
         with self._lock:
@@ -65,6 +76,7 @@ class Scheduler:
         return {
             "running": self.running,
             "tick_seconds": self.tick_seconds,
+            "bot_interval_minutes": BOT_MINUTES,
             "now": iso(utcnow()),
             "pending": len(self.store.list_posts(status="scheduled")),
         }
@@ -75,8 +87,18 @@ class Scheduler:
             processed = self.publisher.process_due()
             if processed:
                 log.info("processed %d due post(s)", len(processed))
+            retried = self.publisher.process_failed()
+            if retried:
+                log.info("auto-retried %d failed post(s)", len(retried))
         except Exception:  # pragma: no cover - keep the scheduler alive
             log.exception("scheduler tick failed")
+
+    def _run_bot_rules(self) -> None:  # pragma: no cover - optional job
+        try:
+            results = BotEngine(self.store, self.publisher.http).run_all()
+            log.info("bot rules ran: %d rule(s)", len(results))
+        except Exception:
+            log.exception("scheduled bot rules failed")
 
     def _refresh_metrics(self) -> None:
         try:

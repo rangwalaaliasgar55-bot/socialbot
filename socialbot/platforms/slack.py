@@ -27,7 +27,7 @@ class Slack(Platform):
         payload: Dict[str, Any] = {"text": post.effective_text()}
         if post.media:
             payload["blocks"] = [{"type": "image",
-                                  "image_url": {"url": m, "alt_text": "attachment"}}
+                                  "image_url": m, "alt_text": "attachment"}
                                  for m in post.media if m.startswith("http")]
         try:
             resp = self.http.session.post(url, json=payload, timeout=self.http.timeout)

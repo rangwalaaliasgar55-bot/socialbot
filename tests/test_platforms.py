@@ -105,6 +105,31 @@ def test_bluesky_truncates_long_text():
     assert len(result.ok and session.last("POST", "createRecord")["json"]["record"]["text"]) <= 300
 
 
+def test_bluesky_repo_uses_did_after_login():
+    """Repo must be the DID (not the handle) once a session exists (regression fix)."""
+    session = FakeSession(routes={
+        ("POST", "createSession"): FakeResponse(200, {"accessJwt": "j", "did": "did:plc:xyz",
+                                                      "handle": "me.bsky.social"}),
+        ("POST", "createRecord"): FakeResponse(200, {"uri": "at://did:plc:xyz/x/1"}),
+    })
+    bluesky = create_platform("bluesky", {"identifier": "me.bsky.social", "password": "p"},
+                              HttpClient(session=session, retries=0))
+    bluesky.like({"id": "at://did:plc:xyz/x/1", "cid": "c1"})
+    record = session.last("POST", "createRecord")
+    assert record["json"]["repo"] == "did:plc:xyz"
+
+
+def test_slack_media_blocks():
+    session = FakeSession(default=FakeResponse(200, text="ok"))
+    slack = create_platform("slack", {"webhook_url": "https://hooks.slack.com/x"},
+                            HttpClient(session=session, retries=0))
+    result = slack.publish(Post(text="check this", media=["https://img.example.com/a.png"]))
+    assert result.ok
+    payload = session.last("POST", "hooks.slack.com")["json"]
+    assert payload["blocks"][0] == {"type": "image", "image_url": "https://img.example.com/a.png",
+                                    "alt_text": "attachment"}
+
+
 # ---------------------------------------------------------------------- reddit
 def test_reddit_auth_and_submit():
     session = FakeSession(routes={
@@ -161,6 +186,23 @@ def test_telegram_api_error_wrapped():
                                HttpClient(session=session, retries=0))
     with pytest.raises(PlatformError, match="chat not found"):
         telegram.publish(Post(text="hello"))
+
+
+def test_telegram_local_file_upload_keeps_fields(tmp_path):
+    """Local file uploads must still send chat_id + caption (regression fix)."""
+    photo = tmp_path / "pic.jpg"
+    photo.write_bytes(b"jpeg-bytes")
+    session = FakeSession(routes={
+        ("POST", "sendPhoto"): FakeResponse(
+            200, {"ok": True, "result": {"message_id": 7, "chat": {"username": "news"}}})})
+    telegram = create_platform("telegram", {"bot_token": "b", "chat_id": "1"},
+                               HttpClient(session=session, retries=0))
+    result = telegram.publish(Post(text="caption", media=[str(photo)]))
+    assert result.ok and result.remote_id == "7"
+    call = session.last("POST", "sendPhoto")
+    assert call["data"]["chat_id"] == "1"
+    assert call["data"]["caption"] == "caption"
+    assert call["files"] is not None
 
 
 # ------------------------------------------------------------------ linkedin

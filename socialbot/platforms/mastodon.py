@@ -48,8 +48,7 @@ class Mastodon(Platform):
             try:
                 content, mime = download_media(m, self.http)
                 files = {"file": (m.split("/")[-1] or "media", content, mime)}
-                resp = self.http.session.post(f"{self._api()}/v2/media" if False else
-                                              f"{self._api()}/media",  # v1 media is universally available
+                resp = self.http.session.post(f"{self._api()}/media",
                                               headers=self._headers(), files=files,
                                               timeout=self.http.timeout)
                 if resp.status_code >= 400:
@@ -80,8 +79,9 @@ class Mastodon(Platform):
                 "comments": s.get("replies_count", 0)}
 
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        instance = str(self.require("instance")).rstrip("/")
         data = self.http.get_json(
-            f"{self._api().rsplit('/v1', 1)[0]}/api/v2/search",
+            f"{instance}/api/v2/search",
             params={"q": query, "type": "statuses", "limit": limit, "resolve": "true"},
             headers=self._headers())
         out = []

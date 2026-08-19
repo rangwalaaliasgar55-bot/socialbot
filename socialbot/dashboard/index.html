@@ -36,7 +36,10 @@
     <section id="view-calendar">
       <div class="cal-head">
         <button class="btn ghost small" id="cal-prev">←</button>
-        <strong id="cal-title" style="text-transform:capitalize"></strong>
+        <div style="display:flex;gap:8px;align-items:center">
+          <strong id="cal-title" style="text-transform:capitalize"></strong>
+          <button class="btn ghost small" id="cal-today">Today</button>
+        </div>
         <button class="btn ghost small" id="cal-next">→</button>
       </div>
       <div class="card">
@@ -63,6 +66,7 @@
           </div>
         </div>
         <div style="overflow-x:auto"><table id="queue-table"></table></div>
+        <p class="muted small" style="margin-top:10px">Click any post for details (results, errors, edit, remote delete). Failed posts are auto-retried by the scheduler with backoff.</p>
       </div>
     </section>
 

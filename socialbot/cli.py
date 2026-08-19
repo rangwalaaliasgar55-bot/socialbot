@@ -72,6 +72,12 @@ def schedule_options(fn):
 @click.version_option(__version__, prog_name="socialbot")
 def cli():
     """🤖 SocialBot — post, schedule, automate & analyze every social network."""
+    # Windows consoles default to cp1252 and crash on emoji — force UTF-8 output.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
 
 
 # --------------------------------------------------------------------- init
