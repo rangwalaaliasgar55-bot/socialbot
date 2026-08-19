@@ -1,4 +1,4 @@
-# Python
+# Python (socialbot)
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -14,11 +14,20 @@ htmlcov/
 # SocialBot runtime data
 *.db
 *.db-journal
-.env
 data/
 uploads/
 
+# Node / web app
+node_modules/
+backend/.data/
+*.log
+
+# Secrets / local env
+.env
+.env.local
+*.local
+
 # OS / editor
 .DS_Store
-.idea/
 .vscode/
+.idea/
