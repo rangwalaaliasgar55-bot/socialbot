@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -279,4 +280,10 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     return app
 
 
-app = create_app()
+# Module-level app for `uvicorn socialbot.api.app:app` and package imports.
+# Skip auto-creation (and scheduler start) when tests set the env var or
+# when pytest is collecting, to avoid side effects and disk issues.
+if os.environ.get("SOCIALBOT_NO_AUTO_APP") or "pytest" in sys.modules:
+    app = None  # type: ignore
+else:
+    app = create_app()
