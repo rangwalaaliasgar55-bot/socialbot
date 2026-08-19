@@ -184,6 +184,10 @@ pip install -e ".[dev]"
 pytest                     # 58 tests, no network needed
 ```
 
+> **CI**: the GitHub Actions workflow ships at [`docs/ci-workflow.yml`](docs/ci-workflow.yml)
+> (the sandbox push token can't create workflow files). To enable it:
+> `mkdir -p .github/workflows && cp docs/ci-workflow.yml .github/workflows/ci.yml && git commit -am "ci" && git push`.
+
 Adding a platform = one small class in `socialbot/platforms/`:
 
 ```python
