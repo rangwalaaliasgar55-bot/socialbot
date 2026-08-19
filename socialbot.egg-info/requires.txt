@@ -1,0 +1,12 @@
+requests>=2.28
+PyYAML>=6.0
+click>=8.1
+python-dotenv>=1.0
+fastapi>=0.104
+uvicorn>=0.24
+APScheduler<4,>=3.10
+
+[dev]
+pytest>=7.4
+httpx>=0.25
+pytest-cov>=4.1

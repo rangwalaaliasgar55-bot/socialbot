@@ -102,8 +102,58 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     # ---------------------------------------------------------------- meta
     @app.get("/api/health")
     def health():
-        return {"ok": True, "version": __version__, "now": iso(utcnow()),
-                "scheduler": state["scheduler"].status()}
+        return {
+            "ok": True, 
+            "version": __version__, 
+            "now": iso(utcnow()),
+            "scheduler": state["scheduler"].status()
+        }
+
+    @app.get("/api/health/detailed")
+    def health_detailed():
+        """Get detailed health status including all components."""
+        from .monitoring import get_monitoring
+        monitoring = get_monitoring()
+        return monitoring.get_full_status()
+
+    @app.get("/api/agents/stats")
+    def agent_stats():
+        """Get multi-agent coordination statistics."""
+        try:
+            from .agents import get_coordinator
+            coordinator = get_coordinator()
+            return coordinator.get_agent_stats()
+        except Exception as e:
+            return {"error": str(e), "coordination_enabled": False}
+
+    @app.get("/api/agents/list")
+    def list_agents(include_dead: bool = False):
+        """List all registered agents."""
+        try:
+            from .agents import get_coordinator
+            coordinator = get_coordinator()
+            agents = coordinator.list_agents(include_dead)
+            return {"agents": [a.to_dict() for a in agents]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    @app.get("/api/tasks")
+    def list_tasks(status: Optional[str] = None, limit: int = 100):
+        """List tasks from the queue."""
+        try:
+            from .agents import get_coordinator
+            coordinator = get_coordinator()
+            tasks = coordinator.list_tasks(status, limit)
+            return {"tasks": [t.to_dict() for t in tasks]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    @app.get("/api/metrics")
+    def get_metrics():
+        """Get current performance metrics."""
+        from .monitoring import get_monitoring
+        monitoring = get_monitoring()
+        return monitoring.metrics.get_all_metrics()
 
     @app.get("/api/platforms")
     def platforms():

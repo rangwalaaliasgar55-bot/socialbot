@@ -1,5 +1,12 @@
 """Publishing engine: takes a Post, fans it out to platforms, records results,
-fires webhooks and handles retries/recurrence (Postiz-style pipeline)."""
+fires webhooks and handles retries/recurrence (Postiz-style pipeline).
+
+Enhanced with:
+- Distributed locking for multi-agent coordination
+- Task queue integration
+- Performance monitoring and metrics
+- Structured logging
+"""
 from __future__ import annotations
 
 import logging
@@ -10,6 +17,8 @@ from .models import Post, PostStatus, PublishResult, iso, parse_dt, utcnow
 from .platforms import PlatformError, create_platform
 from .storage import Store
 from .webhooks import fire_webhook
+from .agents import get_coordinator, distributed_lock
+from .monitoring import get_monitoring, track_event, increment_metric, record_gauge
 
 log = logging.getLogger("socialbot.publisher")
 
@@ -18,6 +27,16 @@ class Publisher:
     def __init__(self, store: Store, http: Optional[HttpClient] = None):
         self.store = store
         self.http = http or HttpClient()
+        self.monitoring = get_monitoring()
+        
+        # Try to get coordinator, but work without it if not available
+        try:
+            self.coordinator = get_coordinator()
+            self.use_coordination = True
+        except Exception:
+            self.coordinator = None
+            self.use_coordination = False
+            log.info("Running in single-agent mode (no coordinator)")
 
     # ------------------------------------------------------------------ util
     def _platform_for(self, name: str, account: Optional[Dict[str, Any]] = None):
@@ -31,40 +50,72 @@ class Publisher:
     # -------------------------------------------------------------- publish
     def publish_now(self, post: Post, store: bool = True) -> Post:
         """Immediately publish *post* to every configured platform it targets."""
+        with self.monitoring.track_operation("publish"):
+            # Use distributed lock if coordinator is available
+            if self.use_coordination:
+                lock_ctx = self.coordinator.acquire_lock(f"publish_{post.id}")
+            else:
+                from contextlib import nullcontext
+                lock_ctx = nullcontext()
+            
+            with lock_ctx:
+                return self._do_publish(post, store)
+    
+    def _do_publish(self, post: Post, store: bool = True) -> Post:
+        """Internal publish implementation."""
         post.status = PostStatus.PUBLISHING.value
         if store:
             self.store.save_post(post)
-        self.store.log_event("publish.start", f"publishing '{post.text[:40]}…' to "
-                                              f"{', '.join(post.platforms)}", {"post_id": post.id})
+        
+        # Track with structured logging
+        track_event("publish.start", f"publishing '{post.text[:40]}…' to {', '.join(post.platforms)}", 
+                   post_id=post.id, platforms=post.platforms)
+        increment_metric("publish.started")
 
         results: Dict[str, Dict[str, Any]] = {}
         succeeded: List[str] = []
         failed: Dict[str, str] = {}
+        platform_times: Dict[str, float] = {}
 
         for platform_name in post.platforms:
+            import time
+            start_time = time.time()
+            
             try:
                 account = self.store.get_account(platform_name)
                 platform = self._platform_for(platform_name, account)
                 sig = (account or {}).get("config", {}).get("signature")
                 result = platform.publish(post)
+                elapsed_ms = (time.time() - start_time) * 1000
+                platform_times[platform_name] = elapsed_ms
+                
                 results[platform_name] = result.to_dict()
                 if result.ok:
                     succeeded.append(platform_name)
                     self.store.log_event("publish.ok",
                                          f"published to {platform_name}: {result.url or result.remote_id}",
                                          {"post_id": post.id, "platform": platform_name})
+                    increment_metric("publish.platform.success", tags={"platform": platform_name})
+                    record_gauge(f"publish.duration.{platform_name}", elapsed_ms)
+                else:
+                    failed[platform_name] = result.error or "unknown error"
+                    increment_metric("publish.platform.failure", tags={"platform": platform_name})
             except PlatformError as exc:
+                elapsed_ms = (time.time() - start_time) * 1000
                 failed[platform_name] = str(exc)
                 results[platform_name] = PublishResult(
                     platform=platform_name, ok=False, error=str(exc)).to_dict()
                 log.warning("publish %s -> %s failed: %s", post.id, platform_name, exc)
                 self.store.log_event("publish.fail", f"{platform_name}: {exc}",
                                      {"post_id": post.id, "platform": platform_name})
+                increment_metric("publish.platform.error", tags={"platform": platform_name, "error_type": "PlatformError"})
             except Exception as exc:  # unexpected — keep going
+                elapsed_ms = (time.time() - start_time) * 1000
                 failed[platform_name] = f"unexpected error: {exc}"
                 results[platform_name] = PublishResult(
                     platform=platform_name, ok=False, error=str(exc)).to_dict()
                 log.exception("unexpected publish error on %s", platform_name)
+                increment_metric("publish.platform.error", tags={"platform": platform_name, "error_type": "Unexpected"})
 
         post.results = results
         post.attempts += 1
@@ -72,12 +123,15 @@ class Publisher:
 
         if succeeded and not failed:
             post.status = PostStatus.PUBLISHED.value
+            increment_metric("publish.completed.success")
         elif succeeded and failed:
             post.status = PostStatus.PARTIAL.value
             post.error = "; ".join(f"{k}: {v}" for k, v in failed.items())[:1000]
+            increment_metric("publish.completed.partial")
         else:
             post.status = PostStatus.FAILED.value
             post.error = "; ".join(f"{k}: {v}" for k, v in failed.items())[:1000]
+            increment_metric("publish.completed.failed")
 
         if store:
             self.store.save_post(post)
@@ -89,6 +143,12 @@ class Publisher:
         # fire webhook (per-post override or account default)
         if post.status in (PostStatus.PUBLISHED.value, PostStatus.PARTIAL.value):
             fire_webhook(post.webhook_url, post)
+        
+        # Record total duration
+        total_platforms = len(post.platforms)
+        record_gauge("publish.total_platforms", total_platforms)
+        record_gauge("publish.successful_platforms", len(succeeded))
+        
         return post
 
     # ------------------------------------------------------------- retrying
@@ -138,12 +198,24 @@ class Publisher:
     # ------------------------------------------------------- due processing
     def process_due(self) -> List[Post]:
         """Publish every post whose scheduled time has arrived."""
-        due = self.store.due_posts(iso(utcnow()))
-        processed: List[Post] = []
-        for post in due:
-            scheduled = parse_dt(post.scheduled_at)
-            if scheduled and scheduled > utcnow():
-                continue
-            self.publish_now(post)   # also queues the next recurrence if any
-            processed.append(post)
-        return processed
+        with self.monitoring.track_operation("process_due"):
+            due = self.store.due_posts(iso(utcnow()))
+            processed: List[Post] = []
+            
+            increment_metric("process_due.checked", len(due))
+            
+            for post in due:
+                scheduled = parse_dt(post.scheduled_at)
+                if scheduled and scheduled > utcnow():
+                    continue
+                
+                try:
+                    self.publish_now(post)   # also queues the next recurrence if any
+                    processed.append(post)
+                    increment_metric("process_due.published")
+                except Exception as e:
+                    log.exception("Error processing due post %s: %s", post.id, e)
+                    increment_metric("process_due.failed")
+            
+            record_gauge("process_due.processed_count", len(processed))
+            return processed
