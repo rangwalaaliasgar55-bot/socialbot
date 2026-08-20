@@ -496,6 +496,9 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         PENDING_STATES[state_token] = {"platform": platform, "redirect_uri": redirect_uri,
                                        "verifier": verifier,
                                        "expires": utcnow().timestamp() + STATE_TTL}
+        state["store"].log_event("account.oauth.start",
+                                 f"{platform} OAuth started (redirect: {redirect_uri})",
+                                 {"platform": platform, "redirect_uri": redirect_uri})
         return {"auth_url": auth_url, "redirect_uri": redirect_uri, "state": state_token}
 
     @app.get("/api/accounts/{platform}/oauth/callback")
@@ -504,18 +507,30 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         """Provider redirect target. Exchanges the code and stores the tokens."""
         pending = PENDING_STATES.pop(oauth_state, None)
         if pending is None or pending["platform"] != platform:
+            state["store"].log_event("account.oauth.error",
+                                     f"{platform} OAuth: unknown or expired session state",
+                                     {"platform": platform, "error": "unknown_state"})
             return HTMLResponse(_oauth_page("❌ Authorization failed",
                                             "Unknown or expired session — start the connect flow again.",
                                             platform))
         if error:
+            state["store"].log_event("account.oauth.error",
+                                     f"{platform} OAuth denied by provider: {error}",
+                                     {"platform": platform, "error": error})
             return HTMLResponse(_oauth_page("❌ Authorization denied",
                                             f"The provider returned: {error}. Nothing was saved.",
                                             platform))
         if not code:
+            state["store"].log_event("account.oauth.error",
+                                     f"{platform} OAuth: no code received",
+                                     {"platform": platform, "error": "missing_code"})
             return HTMLResponse(_oauth_page("❌ Missing code",
                                             "No code received from the provider.", platform))
         account = state["store"].get_account(platform)
         if not account:
+            state["store"].log_event("account.oauth.error",
+                                     f"{platform} OAuth: no account configured",
+                                     {"platform": platform, "error": "no_account"})
             return HTMLResponse(_oauth_page("❌ No account",
                                             f"No {platform} account found — save one first.", platform))
         config = dict(account.get("config", {}))
@@ -526,6 +541,9 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
             updates = exchange_code(platform, cid, secret, code, pending["redirect_uri"],
                                     pending.get("verifier"), state["http"])
         except PlatformError as exc:
+            state["store"].log_event("account.oauth.error",
+                                     f"{platform} OAuth token exchange failed: {exc}",
+                                     {"platform": platform, "error": str(exc)})
             return HTMLResponse(_oauth_page("❌ Token exchange failed", str(exc), platform))
         config.update(updates)
         state["store"].save_account(platform, config, account.get("label", ""),

@@ -379,7 +379,8 @@ window.acctModal = (name) => {
     : "";
   const oauthBtn = p.oauth
     ? `<button class="btn oauth" onclick="oauthConnect('${name}')">🔑 Connect with ${esc(p.oauth.provider)}</button>
-       <p class="muted small">Paste your OAuth ${esc(p.oauth.client_id_key || "client_id")}${p.oauth.client_secret_key ? " and " + esc(p.oauth.client_secret_key) : ""} below, then click — you'll authorize in a popup, no tokens to copy.</p>`
+       <p class="muted small">Paste your OAuth ${esc(p.oauth.client_id_key || "client_id")}${p.oauth.client_secret_key ? " and " + esc(p.oauth.client_secret_key) : ""} below, then click — you'll authorize in a popup, no tokens to copy.</p>
+       <p class="muted small" style="background:var(--bg3);border-radius:8px;padding:8px 10px;word-break:break-all"><strong>Register this exact redirect URI in your ${esc(p.oauth.provider)} app:</strong><br>${esc(location.origin)}/api/accounts/${name}/oauth/callback</p>`
     : "";
   $("modal").innerHTML = `
     <h2><span>${p.icon} ${esc(p.display_name)}</span><button class="close" onclick="closeModal()">✕</button></h2>
