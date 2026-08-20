@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS posts (
     thread INTEGER NOT NULL DEFAULT 0,
     thread_parts_json TEXT NOT NULL DEFAULT '[]',
     best_time INTEGER NOT NULL DEFAULT 0,
-    origin TEXT
+    origin TEXT,
+    review_status TEXT,
+    reviewed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
 CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(scheduled_at);
@@ -154,6 +156,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "thread_parts_json": "TEXT NOT NULL DEFAULT '[]'",
         "best_time": "INTEGER NOT NULL DEFAULT 0",
         "origin": "TEXT",
+        "review_status": "TEXT",
+        "reviewed_at": "TEXT",
     }
     for column, definition in additions.items():
         if column not in existing:
@@ -207,6 +211,8 @@ class Store:
             "thread_parts": loads(row["thread_parts_json"], []),
             "best_time": bool(row["best_time"]),
             "origin": row["origin"],
+            "review_status": row["review_status"],
+            "reviewed_at": row["reviewed_at"],
         })
 
     # ----------------------------------------------------------------- posts
@@ -216,8 +222,8 @@ class Store:
                 """INSERT INTO posts (id, text, media_json, platforms_json, status, scheduled_at,
                      recurrence_json, tag, signature, webhook_url, results_json, error, attempts,
                      max_attempts, created_at, published_at, variants_json, thread,
-                     thread_parts_json, best_time, origin)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     thread_parts_json, best_time, origin, review_status, reviewed_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                      text=excluded.text, media_json=excluded.media_json,
                      platforms_json=excluded.platforms_json, status=excluded.status,
@@ -227,13 +233,15 @@ class Store:
                      attempts=excluded.attempts, max_attempts=excluded.max_attempts,
                      published_at=excluded.published_at, variants_json=excluded.variants_json,
                      thread=excluded.thread, thread_parts_json=excluded.thread_parts_json,
-                     best_time=excluded.best_time, origin=excluded.origin""",
+                     best_time=excluded.best_time, origin=excluded.origin,
+                     review_status=excluded.review_status, reviewed_at=excluded.reviewed_at""",
                 (post.id, post.text, dumps(post.media), dumps(post.platforms), post.status,
                  post.scheduled_at, dumps(post.recurrence), post.tag, post.signature,
                  post.webhook_url, dumps(post.results), post.error, post.attempts,
                  post.max_attempts, post.created_at, post.published_at, dumps(post.variants),
                  1 if post.thread else 0, dumps(post.thread_parts),
-                 1 if post.best_time else 0, post.origin))
+                 1 if post.best_time else 0, post.origin,
+                 post.review_status, post.reviewed_at))
         return post
 
     def get_post(self, post_id: str) -> Optional[Post]:
@@ -256,6 +264,25 @@ class Store:
     def delete_post(self, post_id: str) -> bool:
         with self._conn() as c:
             cur = c.execute("DELETE FROM posts WHERE id=?", (post_id,))
+        return cur.rowcount > 0
+
+    # ------------------------------------------------------------ review queue
+    def list_posts_for_review(self, review_status: str = "pending",
+                              limit: int = 200) -> List[Post]:
+        """Posts awaiting human review (agent-generated drafts)."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT * FROM posts WHERE review_status=? "
+                "ORDER BY COALESCE(scheduled_at, created_at) DESC LIMIT ?",
+                (review_status, limit)).fetchall()
+        return [self._row_to_post(r) for r in rows]
+
+    def set_review(self, post_id: str, review_status: str,
+                   reviewed_at: Optional[str] = None) -> bool:
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE posts SET review_status=?, reviewed_at=COALESCE(?, reviewed_at) "
+                "WHERE id=?", (review_status, reviewed_at or iso(utcnow()), post_id))
         return cur.rowcount > 0
 
     def due_posts(self, now_iso: str) -> List[Post]:

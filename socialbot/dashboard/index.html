@@ -20,6 +20,7 @@
       <a data-view="agents">🧠 Agents</a>
       <a data-view="analytics">📊 Analytics</a>
       <a data-view="insights">🔮 Insights</a>
+      <a data-view="review">👁️ Review</a>
       <a data-view="events">⚡ Activity</a>
       <a href="/docs" target="_blank">🧩 API docs</a>
     </nav>
@@ -255,6 +256,18 @@
       <div class="card">
         <h2>User profiles</h2>
         <div style="overflow-x:auto"><table id="in-profiles"></table></div>
+      </div>
+    </section>
+
+    <!-- REVIEW -->
+    <section id="view-review" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Review queue</h2>
+          <button class="btn ghost small" id="rev-refresh">↻ Refresh</button>
+        </div>
+        <p class="muted small" style="margin-bottom:12px">Agent-generated drafts (feeds, trends, competitors) wait here until you approve or reject them. Approving can schedule immediately or at your best engagement window.</p>
+        <div style="overflow-x:auto"><table id="review-table"></table></div>
       </div>
     </section>
 

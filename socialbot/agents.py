@@ -273,7 +273,8 @@ class AgentEngine:
                         draft_text = ai_mod.generate(gaps[0], n=1)[0]["text"]
                         draft = Post(text=draft_text, platforms=[],
                                      status=PostStatus.DRAFT.value,
-                                     origin=f"competitor:{r.id}")
+                                     origin=f"competitor:{r.id}",
+                                     review_status="pending")
                         self.store.save_post(draft)
                         drafts_created += 1
 

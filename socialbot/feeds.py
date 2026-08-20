@@ -90,7 +90,9 @@ def suggest_from_items(items: List[Dict[str, Any]], n: int = 3,
         hashtags = " ".join(ai_mod.hashtags_for(topic, 3))
         text += f"\n{hashtags}"
         drafts.append(Post(text=text.strip(), platforms=platforms or [],
-                           status=PostStatus.DRAFT.value, origin=f"feed:{item.get('source', '')[:40]}"))
+                           status=PostStatus.DRAFT.value,
+                           origin=f"feed:{item.get('source', '')[:40]}",
+                           review_status="pending"))
         if len(drafts) >= n:
             break
     return drafts
@@ -172,7 +174,8 @@ def capture_trends(store: Store, http: Optional[HttpClient] = None,
                 from . import ai as ai_mod
                 draft_text = ai_mod.generate(name, n=1)[0]["text"]
                 draft = Post(text=draft_text, platforms=[], status=PostStatus.DRAFT.value,
-                             tag="trend", origin=f"trend:{platform_name}:{name}")
+                             tag="trend", origin=f"trend:{platform_name}:{name}",
+                             review_status="pending")
                 store.save_post(draft)
         reports.append({"platform": platform_name, "ok": True,
                         "captured": captured, "total": len(trends)})
