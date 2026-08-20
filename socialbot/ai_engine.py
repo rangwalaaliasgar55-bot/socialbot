@@ -71,12 +71,7 @@ class AIEngine:
         "twitter": {"chars": 280, "hashtags": 2, "tone": "concise"},
         "x": {"chars": 280, "hashtags": 2, "tone": "concise"},
         "linkedin": {"chars": 3000, "hashtags": 5, "tone": "professional"},
-        "instagram": {"chars": 2200, "hashtags": 15, "tone": "visual"},
-        "facebook": {"chars": 63206, "hashtags": 3, "tone": "community"},
-        "threads": {"chars": 500, "hashtags": 3, "tone": "conversational"},
-        "mastodon": {"chars": 500, "hashtags": 4, "tone": "conversational"},
-        "bluesky": {"chars": 300, "hashtags": 1, "tone": "conversational"},
-        "tiktok": {"chars": 2200, "hashtags": 5, "tone": "trendy"},
+        "telegram": {"chars": 4096, "hashtags": 0, "tone": "direct"},
         "youtube": {"chars": 5000, "hashtags": 3, "tone": "informative"},
     }
 

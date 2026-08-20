@@ -34,7 +34,7 @@ def test_platforms_endpoint(client):
     c, _ = client
     platforms = c.get("/api/platforms").json()
     names = {p["name"] for p in platforms}
-    assert "mock" in names and "mastodon" in names
+    assert "mock" in names and "telegram" in names
     mock = next(p for p in platforms if p["name"] == "mock")
     assert mock["configured"] is True
 
@@ -90,27 +90,27 @@ def test_scheduler_control(client):
 def test_accounts_upsert_masks_secrets(client):
     c, store = client
     resp = c.post("/api/accounts", json={
-        "platform": "mastodon",
+        "platform": "telegram",
         "label": "main",
-        "config": {"instance": "https://m.social", "access_token": "secret-token"}})
+        "config": {"bot_token": "secret-token", "chat_id": "12345"}})
     assert resp.status_code == 201
     body = resp.json()
     assert body["verified"] in (True, False)  # verify attempted (network may fail)
 
     listed = c.get("/api/accounts").json()
-    account = next(a for a in listed if a["platform"] == "mastodon")
-    assert account["config"]["access_token"] == "•••"
-    assert account["config"]["instance"] == "https://m.social"
+    account = next(a for a in listed if a["platform"] == "telegram")
+    assert account["config"]["bot_token"] == "•••"
+    assert account["config"]["chat_id"] == "12345"
 
     # partial update must not wipe the masked secret
-    c.post("/api/accounts", json={"platform": "mastodon",
-                                  "config": {"instance": "https://other.social",
-                                             "access_token": "•••"}})
-    stored = store.get_account("mastodon")
-    assert stored["config"]["access_token"] == "secret-token"
-    assert stored["config"]["instance"] == "https://other.social"
+    c.post("/api/accounts", json={"platform": "telegram",
+                                  "config": {"chat_id": "99999",
+                                             "bot_token": "•••"}})
+    stored = store.get_account("telegram")
+    assert stored["config"]["bot_token"] == "secret-token"
+    assert stored["config"]["chat_id"] == "99999"
 
-    assert c.delete("/api/accounts/mastodon").json()["ok"] is True
+    assert c.delete("/api/accounts/telegram").json()["ok"] is True
 
 
 def test_bot_rules_crud_and_run(client):

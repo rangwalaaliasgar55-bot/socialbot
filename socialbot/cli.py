@@ -106,7 +106,7 @@ def init(demo: bool):
         click.echo("→ or:   socialbot dashboard  (full web UI)")
     click.echo("\nNext steps:")
     click.echo("  socialbot platforms                 # see supported networks")
-    click.echo("  socialbot accounts add mastodon     # connect an account")
+    click.echo("  socialbot accounts add telegram     # connect an account")
     click.echo("  socialbot post 'hi' --to mock       # first post")
 
 
@@ -181,7 +181,7 @@ def accounts(action: str, platform_name: Optional[str]):
             click.echo(f"• {a['platform']:<12} {a['label'] or '(no label)':<20} keys: {keys}")
     else:
         if not platform_name:
-            raise click.ClickException("specify a platform: socialbot accounts remove mastodon")
+            raise click.ClickException("specify a platform: socialbot accounts remove telegram")
         click.echo("removed" if store.delete_account(platform_name) else "not found")
 
 
@@ -230,13 +230,13 @@ def recurrence_from(repeat: Optional[str]):
 @cli.command()
 @click.argument("text")
 @click.option("--to", "targets", default="mock", show_default=True,
-              help="comma-separated platforms (e.g. mastodon,telegram)")
+              help="comma-separated platforms (e.g. telegram,linkedin)")
 @click.option("--media", default=None, help="comma-separated media URLs/paths")
 @click.option("--tag", default=None, help="colored tag for the calendar")
 @click.option("--signature", default=None, help="signature appended to the post")
 @click.option("--webhook", default=None, help="webhook URL notified after publish")
 @click.option("--variant", "variants", multiple=True,
-              help="per-platform text override, repeatable (e.g. --variant mastodon='short version')")
+              help="per-platform text override, repeatable (e.g. --variant telegram='short version')")
 @click.option("--thread", is_flag=True, help="split long text into a thread/carousel")
 @click.option("--best-time", is_flag=True,
               help="schedule at the best engagement window from your history")
@@ -412,7 +412,7 @@ def generate(topic: str, n: int, tone: str):
     for i, d in enumerate(drafts, 1):
         click.echo(f"\n── draft {i} ({d['engine']}) " + "─" * 30)
         click.echo(d["text"])
-    click.echo("\ntip: use `socialbot post '<draft>' --to mastodon` or the composer")
+    click.echo("\ntip: use `socialbot post '<draft>' --to telegram` or the composer")
 
 
 # ------------------------------------------------------------------- analyze

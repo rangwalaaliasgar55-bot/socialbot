@@ -1,15 +1,15 @@
 # 🤖 SocialBot
 
-**All-in-one open-source social media scheduling & automation bot.** Post, schedule, auto-engage and analyze **13+ social networks** from one place — a self-hostable alternative to Buffer/Hootsuite, in the spirit of [Postiz](https://github.com/gitroomhq/postiz-app) and the classic Python growth bots, built as a single lightweight Python app.
+**All-in-one open-source social media scheduling & automation bot.** Post, schedule, auto-engage and analyze **LinkedIn, X, YouTube & Telegram** from one place — a self-hostable alternative to Buffer/Hootsuite, in the spirit of [Postiz](https://github.com/gitroomhq/postiz-app) and the classic Python growth bots, built as a single lightweight Python app.
 
 <div align="center">
 
-[![version](https://img.shields.io/badge/version-1.4.0-2b7a78?style=for-the-badge)]()
-[![tests](https://img.shields.io/badge/tests-126%20passing-2ea043?style=for-the-badge)](https://github.com/rangwalaaliasgar55-bot/socialbot/actions/workflows/ci.yml)
+[![version](https://img.shields.io/badge/version-1.4.1-2b7a78?style=for-the-badge)]()
+[![tests](https://img.shields.io/badge/tests-116%20passing-2ea043?style=for-the-badge)](https://github.com/rangwalaaliasgar55-bot/socialbot/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![license](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
-[![platforms](https://img.shields.io/badge/platforms-13%2B-7c5cff?style=for-the-badge)](#-supported-platforms)
+[![platforms](https://img.shields.io/badge/platforms-5-7c5cff?style=for-the-badge)](#-supported-platforms)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
 
 </div>
@@ -35,18 +35,10 @@
 | Platform | Post | Media | Delete | Metrics | Bot actions |
 |---|:--:|:--:|:--:|:--:|---|
 | 🧪 **Mock (demo)** | ✅ | ✅ | ✅ | ✅ | like, follow, comment, repost, search |
-| 🐘 Mastodon | ✅ | ✅ | ✅ | ✅ | like, repost, comment, follow, search |
-| 🦋 Bluesky | ✅ | ✅ | ✅ | ✅ | like, repost, comment, follow, search |
-| 👽 Reddit | ✅ (self/link) | link | ✅ | ✅ | upvote, comment, search |
 | 𝕏 X (Twitter) | ✅ (v2) | — | ✅ | ✅ | like, follow, search |
 | 💼 LinkedIn | ✅ | — | ✅ | — | — |
-| 📘 Facebook Page | ✅ | ✅ | ✅ | ✅ | — |
-| 📸 Instagram Business | ✅ | ✅ | ✅ | ✅ | — |
-| 🧵 Threads | ✅ | ✅ | — | ✅ | — |
-| 📍 Pinterest | ✅ | ✅ | ✅ | — | — |
 | ✈️ Telegram | ✅ | ✅ | — | — | — |
-| 💬 Discord | ✅ (webhook) | embed | — | — | — |
-| 🏢 Slack | ✅ (webhook) | ✅ | — | — | — |
+| ▶️ YouTube | ✅ (video) | ✅ | ✅ | ✅ | — |
 
 ## 🚀 Quickstart
 
@@ -64,7 +56,7 @@ socialbot dashboard
 
 # 3. or work from the terminal
 socialbot post "Hello world! 🚀" --to mock
-socialbot post "Big launch tomorrow" --to mock,mastodon --at "tomorrow 09:00"   # schedule
+socialbot post "Big launch tomorrow" --to mock,telegram --at "tomorrow 09:00"   # schedule
 socialbot run                                                                   # scheduler worker
 ```
 
@@ -74,7 +66,7 @@ socialbot run                                                                   
 
 ```bash
 # interactive — prompts for the credentials it needs
-socialbot accounts add mastodon
+socialbot accounts add telegram
 
 # or non-interactive
 socialbot accounts add telegram --set bot_token=123:ABC --set chat_id=-1001234567890 --label "news channel"
@@ -95,7 +87,7 @@ socialbot dashboard            # http://localhost:8000
 - **✍️ Composer** — pick platforms (live character limits), media, tags, signature, recurrence, webhook, and **✨ AI drafts**
 - **📮 Queue** — every post with per-platform results; click any post for full detail (results, errors, edit, remote delete)
 - **🔌 Accounts** — connect/verify credentials with auto-generated forms; disconnect with one click
-- **🤖 Growth bot** — create/edit/pause rules (`comment on #python posts on Bluesky`), run dry-run or live
+- **🤖 Growth bot** — create/edit/pause rules (`comment on #python posts on X`), run dry-run or live
 - **📊 Analytics** — totals, engagement bars per platform, CSV export
 - **⚡ Activity** — full event log
 
@@ -144,7 +136,7 @@ Safety model (like Postiz, we're **ToS-friendly**):
 # schedule a post
 curl -X POST http://localhost:8000/api/posts \
   -H 'Content-Type: application/json' \
-  -d '{"text":"Hello from n8n 🎉","platforms":["mastodon","telegram"],
+  -d '{"text":"Hello from n8n 🎉","platforms":["telegram","linkedin"],
        "scheduled_at":"2026-01-01T09:00:00Z"}'
 
 # publish immediately
@@ -203,22 +195,18 @@ SocialBot is configured by **accounts in the database** plus a few environment v
 | `SOCIALBOT_AI_BASE_URL` | e.g. `https://api.groq.com/openai/v1`, `http://localhost:11434/v1` |
 | `SOCIALBOT_AI_MODEL` | e.g. `llama-3.1-8b-instant` |
 
-Platform credentials can also be provided as `PLATFORM_FIELD` env vars (e.g. `TELEGRAM_BOT_TOKEN`, `MASTODON_INSTANCE`) — see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md).
+Platform credentials can also be provided as `PLATFORM_FIELD` env vars (e.g. `TELEGRAM_BOT_TOKEN`, `LINKEDIN_ACCESS_TOKEN`) — see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md).
 
 ## 🧪 Development
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 126 tests, no network needed
+pytest                     # 116 tests, no network needed
 ```
 
 ## 🤝 Contributing
 
 Found a bug or have an idea? Open an [Issue](https://github.com/rangwalaaliasgar55-bot/socialbot/issues) using the templates, or submit a [Pull Request](https://github.com/rangwalaaliasgar55-bot/socialbot/pulls). See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-> **CI**: the GitHub Actions workflow ships at [`docs/ci-workflow.yml`](docs/ci-workflow.yml)
-> (the sandbox push token can't create workflow files). To enable it:
-> `mkdir -p .github/workflows && cp docs/ci-workflow.yml .github/workflows/ci.yml && git commit -am "ci" && git push`.
 
 Adding a platform = one small class in `socialbot/platforms/`:
 
@@ -241,11 +229,11 @@ It instantly appears in the CLI, dashboard, API and scheduler.
 
 ## 🗺 Roadmap
 
-- [ ] OAuth flows for X / Facebook / LinkedIn (click-to-connect)
+- [ ] OAuth click-to-connect for X / LinkedIn / YouTube
 - [ ] Team collaboration & approval workflows
 - [ ] Media library with upload caching
-- [ ] YouTube / TikTok / Nostr / Lemmy providers
 - [ ] Best-time-to-post suggestions
+- [ ] Restore more platforms on demand (Mastodon, Bluesky, Instagram, …)
 
 ## ⚖️ Compliance & responsible use
 

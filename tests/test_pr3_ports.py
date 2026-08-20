@@ -184,7 +184,7 @@ def test_ai_engine_mock_mode(monkeypatch):
 
 
 def test_ai_engine_full_package():
-    package = generate_content_package("Sustainable Living", platform="instagram",
+    package = generate_content_package("Sustainable Living", platform="linkedin",
                                        tone="fun", target_audience="gen z")
     assert package.prompt
     assert package.caption
@@ -273,7 +273,7 @@ def test_api_monitoring_and_tasks(client):
 
 def test_api_trend_strategy(client):
     c, _ = client
-    strategy = c.post("/api/trends/strategy", params={"platform": "instagram"}).json()
+    strategy = c.post("/api/trends/strategy", params={"platform": "linkedin"}).json()
     assert strategy["recommended_topic"]
 
 
@@ -281,7 +281,7 @@ def test_api_ai_content_mock(client, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     c, _ = client
     body = c.post("/api/ai/content", json={
-        "topic": "Coffee", "platform": "instagram", "tone": "fun",
+        "topic": "Coffee", "platform": "linkedin", "tone": "fun",
         "target_audience": "students",
         "trending_keywords": ["latte", "morning"]}).json()
     assert body["caption"]

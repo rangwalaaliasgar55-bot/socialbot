@@ -32,14 +32,14 @@ def test_rule_live_actions_counted(store):
 
 
 def test_rule_requires_account(store):
-    rule = BotRule(name="x", platform="mastodon", action="like", trigger_value="a")
+    rule = BotRule(name="x", platform="mock", action="like", trigger_value="a")
     result = BotEngine(store).run_rule(rule)
     assert result["ok"] is False and "no account" in result["error"]
 
 
 def test_rule_unsupported_action(store):
-    store.save_account("discord", {"webhook_url": "https://x"})  # no 'like' capability
-    rule = BotRule(name="x", platform="discord", action="like", trigger_value="a")
+    store.save_account("telegram", {"bot_token": "b", "chat_id": "1"})  # no 'like' capability
+    rule = BotRule(name="x", platform="telegram", action="like", trigger_value="a")
     result = BotEngine(store).run_rule(rule)
     assert result["ok"] is False and "does not support" in result["error"]
 

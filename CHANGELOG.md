@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.1 — 2026-08-20
+
+Focused build: SocialBot now ships with exactly the platforms you need.
+
+- **Platforms trimmed to 5**: Mock (demo), LinkedIn, X (Twitter), Telegram and
+  YouTube. Removed Mastodon, Bluesky, Reddit, Discord, Slack, Facebook,
+  Instagram, Threads, Pinterest, TikTok, Nostr, Lemmy.
+- **Docs** updated everywhere (README, ENVIRONMENT.md, .env.example) so only
+  the kept platforms are shown.
+- 116 tests (was 126 — removed 11 platform tests, added 1 YouTube test)
+
 ## 1.4.0 — 2026-08-20
 
 Human-in-the-loop review queue for agent-generated content.

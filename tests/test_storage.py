@@ -69,7 +69,7 @@ def test_rules_crud(store):
 def test_metrics_and_events(store):
     store.save_metrics("p1", "mock", "m1", {"likes": 5})
     store.save_metrics("p1", "mock", "m1", {"likes": 9})
-    store.save_metrics("p1", "bluesky", "b1", {"likes": 2})
+    store.save_metrics("p1", "telegram", "b1", {"likes": 2})
     latest = store.latest_metrics()
     assert len(latest) == 2                      # dedup per (post, platform)
     mock_row = next(r for r in latest if r["platform"] == "mock")

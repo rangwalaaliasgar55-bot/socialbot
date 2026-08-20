@@ -21,7 +21,7 @@ A tool that connects to your social platforms, analyzes follower growth and enga
 - **Queue + activity log** — a scheduled-queue table and an activity feed; due posts are auto-"published" (logged) by an in-process scheduler every 60s.
 
 ## How this compares to socialbot (the linked repo)
-- `socialbot` (Python/FastAPI) *does* things: schedules, publishes to 13+ networks, growth bot, AI drafts.
+- `socialbot` (Python/FastAPI) *does* things: schedules, publishes to LinkedIn/X/YouTube/Telegram, growth bot, AI drafts.
 - Our app *diagnoses* well (growth tracking, weak-spot scoring, auto-report) and now also *acts* (plan & schedule).
 - Natural next step to fully match: connect the scheduler to live platform APIs so posts actually publish (not just logged).
 

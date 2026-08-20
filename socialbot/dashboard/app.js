@@ -751,7 +751,7 @@ function feedModal(f) {
       <div><label>Name</label><input id="ff-name" value="${esc(f.name || "")}" /></div>
       <div><label>Kind</label><select id="ff-kind"><option value="rss" ${f.kind !== "curated" ? "selected" : ""}>RSS feed</option><option value="curated" ${f.kind === "curated" ? "selected" : ""}>Curated</option></select></div>
       <div style="grid-column:1/-1"><label>RSS URL</label><input id="ff-url" placeholder="https://blog.example.com/feed.xml" value="${esc(f.url || "")}" /></div>
-      <div style="grid-column:1/-1"><label>Default platforms for drafts (comma separated)</label><input id="ff-targets" placeholder="mastodon,telegram" value="${esc((f.target_platforms || []).join(", "))}" /></div>
+      <div style="grid-column:1/-1"><label>Default platforms for drafts (comma separated)</label><input id="ff-targets" placeholder="telegram,linkedin" value="${esc((f.target_platforms || []).join(", "))}" /></div>
       <div><label>Drafts per pull</label><input id="ff-n" type="number" value="${f.n_drafts || 3}" /></div>
       <div><label>Auto-create drafts</label><select id="ff-auto"><option value="1" ${f.auto_draft !== false ? "selected" : ""}>yes</option><option value="0" ${f.auto_draft === false ? "selected" : ""}>no</option></select></div>
     </div>
