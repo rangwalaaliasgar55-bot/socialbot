@@ -232,6 +232,31 @@ def connect(platform_name: str, port: int):
     click.echo(f"✅ {platform_name} connected. verify: {'✅' if ok else '⚠️'} {message}")
 
 
+@cli.command("oauth-apps")
+def oauth_apps():
+    """Open the pages where you create the OAuth apps for each platform.
+
+    Run this once per platform, follow the on-screen steps, and you'll have
+    the client id + secret to paste back here or in the dashboard.
+    """
+    import webbrowser
+    pages = {
+        "linkedin": "https://developer.linkedin.com/",
+        "twitter": "https://developer.x.com/",
+        "youtube": "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
+        "telegram": "https://t.me/BotFather",
+    }
+    click.echo("Opening tabs to create developer apps:")
+    for platform_name, url in pages.items():
+        click.echo(f"  • {platform_name:<10} {url}")
+        webbrowser.open(url, new=2)
+    click.echo("\nOnce you have your client id/secret, connect from the dashboard "
+               "(Accounts tab) or run:\n"
+               "  socialbot connect youtube\n  socialbot connect twitter\n"
+               "  socialbot connect linkedin\n"
+               "  socialbot accounts add telegram")
+
+
 # --------------------------------------------------------------------- post
 def build_post(text: str, targets: str, media: Optional[str], tag: Optional[str],
                signature: Optional[str], webhook: Optional[str],

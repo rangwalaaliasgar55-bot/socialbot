@@ -378,7 +378,8 @@ window.acctModal = (name) => {
        <ol>${p.guide.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></details>`
     : "";
   const oauthBtn = p.oauth
-    ? `<button class="btn oauth" onclick="oauthConnect('${name}')">🔑 Connect with ${esc(p.oauth.provider)}</button>
+    ? `<div id="af-oauth-msg" class="small" style="margin:8px 0"></div>
+       <button class="btn oauth" onclick="oauthConnect('${name}')">🔑 Connect with ${esc(p.oauth.provider)}</button>
        <p class="muted small">Paste your OAuth ${esc(p.oauth.client_id_key || "client_id")}${p.oauth.client_secret_key ? " and " + esc(p.oauth.client_secret_key) : ""} below, then click — you'll authorize in a popup, no tokens to copy.</p>
        <p class="muted small" style="background:var(--bg3);border-radius:8px;padding:8px 10px;word-break:break-all"><strong>Register this exact redirect URI in your ${esc(p.oauth.provider)} app:</strong><br>${esc(location.origin)}/api/accounts/${name}/oauth/callback</p>`
     : "";
@@ -404,16 +405,20 @@ window.acctModal = (name) => {
 window.oauthConnect = async (name) => {
   const p = platform(name);
   const o = p.oauth;
+  const box = $("af-oauth-msg") || $("af-msg");
+  const say = (m, bad) => { box.textContent = m; box.style.color = bad ? "var(--danger, #e5484d)" : ""; };
   const cid = $(`af-${o.client_id_key || "client_id"}`)?.value.trim() || "";
   const sec = $(`af-${o.client_secret_key || "client_secret"}`)?.value.trim() || "";
-  if (!cid) { $("af-msg").textContent = "❌ Paste your OAuth client id first (see the guide above)."; return; }
+  if (!cid) { say(`❌ The "${o.client_id_key || "client_id"}" field is empty — this comes from your ${o.provider} developer app (guide above). Nothing else can happen until that's filled.`, true); return; }
+  if (o.client_secret_key && !sec) { say(`❌ The "${o.client_secret_key}" field is empty — paste it too.`, true); return; }
+  say("⏳ Starting the flow…");
   let r;
   try {
     r = await api(`/api/accounts/${name}/oauth/start`, { method: "POST",
       body: JSON.stringify({ client_id: cid, client_secret: sec }) });
-  } catch (e) { $("af-msg").textContent = "❌ " + e.message; return; }
+  } catch (e) { say("❌ " + e.message, true); return; }
   window.open(r.auth_url, "socialbot-oauth", "width=640,height=720");
-  $("af-msg").textContent = "⏳ Authorize in the popup — this page refreshes automatically…";
+  say("⏳ Authorize in the popup — if it didn't open, allow popups for this site and click Connect again.");
 };
 window.addEventListener("message", (e) => {
   if (e.data && e.data.type === "socialbot-oauth-done") {
