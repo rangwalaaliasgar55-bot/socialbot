@@ -31,3 +31,4 @@ backend/.data/
 .DS_Store
 .vscode/
 .idea/
+oauth_states.json

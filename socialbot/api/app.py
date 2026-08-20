@@ -30,8 +30,8 @@ from ..http import HttpClient
 from ..models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
                       Post, PostStatus, dumps, iso, parse_dt, utcnow)
 from ..monitoring import get_monitoring
-from ..oauth import (PENDING_STATES, STATE_TTL, build_auth_url, exchange_code,
-                     new_state)
+from ..oauth import (build_auth_url, exchange_code, new_state, pop_pending_state,
+                     store_pending_state)
 from ..platforms import PlatformError, platform_meta, platform_names, create_platform
 from ..publisher import Publisher
 from ..scheduler import Scheduler
@@ -493,9 +493,9 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
                                                 redirect_uri, state_token)
         except PlatformError as exc:
             raise HTTPException(400, str(exc))
-        PENDING_STATES[state_token] = {"platform": platform, "redirect_uri": redirect_uri,
-                                       "verifier": verifier,
-                                       "expires": utcnow().timestamp() + STATE_TTL}
+        store_pending_state(state_token,
+                            {"platform": platform, "redirect_uri": redirect_uri,
+                             "verifier": verifier})
         state["store"].log_event("account.oauth.start",
                                  f"{platform} OAuth started (redirect: {redirect_uri})",
                                  {"platform": platform, "redirect_uri": redirect_uri})
@@ -505,13 +505,17 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     def oauth_callback(platform: str, code: str = "",
                        oauth_state: str = Query("", alias="state"), error: str = ""):
         """Provider redirect target. Exchanges the code and stores the tokens."""
-        pending = PENDING_STATES.pop(oauth_state, None)
+        pending, reason = pop_pending_state(oauth_state)
         if pending is None or pending["platform"] != platform:
+            detail = ("Unknown or expired session — start the connect flow again. "
+                      "If this keeps happening, keep the browser tab open and don't "
+                      "refresh the dashboard mid-flow." if reason == "unknown"
+                      else "Session expired (5-minute limit) — click Connect again.")
             state["store"].log_event("account.oauth.error",
-                                     f"{platform} OAuth: unknown or expired session state",
-                                     {"platform": platform, "error": "unknown_state"})
+                                     f"{platform} OAuth: session {reason}",
+                                     {"platform": platform, "error": reason})
             return HTMLResponse(_oauth_page("❌ Authorization failed",
-                                            "Unknown or expired session — start the connect flow again.",
+                                            detail,
                                             platform))
         if error:
             state["store"].log_event("account.oauth.error",

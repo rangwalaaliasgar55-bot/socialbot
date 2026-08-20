@@ -44,6 +44,57 @@ log = logging.getLogger("socialbot.oauth")
 
 PENDING_STATES: Dict[str, Dict[str, Any]] = {}   # state -> flow info (API mode)
 STATE_TTL = 300                                   # seconds a pending flow stays valid
+STATE_FILE = os.environ.get("SOCIALBOT_OAUTH_STATE_FILE") or "oauth_states.json"
+_LOCK = threading.Lock()
+
+
+def _persist_states() -> None:
+    """Write pending states to disk so a dashboard restart can't orphan a flow."""
+    try:
+        with _LOCK:
+            with open(STATE_FILE, "w", encoding="utf-8") as fh:
+                json.dump(PENDING_STATES, fh)
+    except OSError:
+        log.warning("could not persist oauth states to %s", STATE_FILE)
+
+
+def _load_states() -> None:
+    try:
+        with _LOCK:
+            with open(STATE_FILE, "r", encoding="utf-8") as fh:
+                PENDING_STATES.update(json.load(fh))
+    except (OSError, ValueError):
+        pass
+
+
+def store_pending_state(state: str, payload: Dict[str, Any]) -> None:
+    """Remember a pending OAuth flow (in-memory + on disk)."""
+    payload = dict(payload)
+    payload.setdefault("expires", time.time() + STATE_TTL)
+    with _LOCK:
+        PENDING_STATES[state] = payload
+    _persist_states()
+
+
+def pop_pending_state(state: str) -> tuple:
+    """Resolve a callback state.
+
+    Returns ``(payload, None)`` on success, ``(None, reason)`` on failure where
+    reason is ``"expired"`` (session older than the TTL) or ``"unknown"``.
+    Survives dashboard restarts via the on-disk copy.
+    """
+    now = time.time()
+    with _LOCK:
+        payload = PENDING_STATES.pop(state, None)
+    if payload is None:
+        _load_states()
+        with _LOCK:
+            payload = PENDING_STATES.pop(state, None)
+        if payload is None:
+            return None, "unknown"
+    if payload.get("expires", 0) < now:
+        return None, "expired"
+    return payload, None
 
 
 # ------------------------------------------------------------------ helpers
