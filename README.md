@@ -2,10 +2,17 @@
 
 **All-in-one open-source social media scheduling & automation bot.** Post, schedule, auto-engage and analyze **13+ social networks** from one place — a self-hostable alternative to Buffer/Hootsuite, in the spirit of [Postiz](https://github.com/gitroomhq/postiz-app) and the classic Python growth bots, built as a single lightweight Python app.
 
-[![tests](https://github.com/rangwalaaliasgar55-bot/socialbot/actions/workflows/ci.yml/badge.svg)](https://github.com/rangwalaaliasgar55-bot/socialbot/actions/workflows/ci.yml)
-[![python](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/socialbot/)
-[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![platforms](https://img.shields.io/badge/platforms-13%2B-7c5cff)](#-supported-platforms)
+<div align="center">
+
+[![version](https://img.shields.io/badge/version-1.4.0-2b7a78?style=for-the-badge)]()
+[![tests](https://img.shields.io/badge/tests-126%20passing-2ea043?style=for-the-badge)](https://github.com/rangwalaaliasgar55-bot/socialbot/actions/workflows/ci.yml)
+[![python](https://img.shields.io/badge/python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![license](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
+[![platforms](https://img.shields.io/badge/platforms-13%2B-7c5cff?style=for-the-badge)](#-supported-platforms)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
+
+</div>
 
 ---
 
@@ -202,8 +209,12 @@ Platform credentials can also be provided as `PLATFORM_FIELD` env vars (e.g. `TE
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 66 tests, no network needed
+pytest                     # 126 tests, no network needed
 ```
+
+## 🤝 Contributing
+
+Found a bug or have an idea? Open an [Issue](https://github.com/rangwalaaliasgar55-bot/socialbot/issues) using the templates, or submit a [Pull Request](https://github.com/rangwalaaliasgar55-bot/socialbot/pulls). See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 > **CI**: the GitHub Actions workflow ships at [`docs/ci-workflow.yml`](docs/ci-workflow.yml)
 > (the sandbox push token can't create workflow files). To enable it:
