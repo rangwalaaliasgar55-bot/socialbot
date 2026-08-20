@@ -603,11 +603,14 @@ def inbox(action: str, name: Optional[str], platform_name: str, intents: str,
 # ------------------------------------------------------------------ trends
 @cli.command()
 @click.option("--no-drafts", is_flag=True, help="capture trends but don't create drafts")
-def trends(no_drafts: bool):
+@click.option("--no-real", is_flag=True,
+              help="skip the real-time trend analyzer (Twitter/Reddit) and use platform trends only")
+def trends(no_drafts: bool, no_real: bool):
     """Capture trending topics and (by default) create draft posts."""
     store = get_store()
     from .agents import AgentEngine
-    reports = AgentEngine(store).run_trends(create_drafts=not no_drafts)
+    reports = AgentEngine(store).run_trends(create_drafts=not no_drafts,
+                                           include_real=not no_real)
     if not reports:
         click.echo("no platform supports trending yet (mock does — add a mock account)")
         return
@@ -621,6 +624,45 @@ def trends(no_drafts: bool):
         click.echo("\nlatest trends:")
         for t in stored[:10]:
             click.echo(f"  • {t['topic']}  ({t['platform']}, {t['captured_at'][:16]})")
+
+
+# ------------------------------------------------------------- coordination
+@cli.command()
+@click.argument("action", type=click.Choice(["list", "enqueue", "stats"]))
+@click.option("--type", "task_type", default="generic", help="task type when enqueuing")
+@click.option("--payload", default="{}", help="JSON payload when enqueuing")
+@click.option("--priority", type=int, default=0, help="priority when enqueuing (higher = sooner)")
+@click.option("--status", default=None, help="filter tasks by status (list)")
+@click.option("--limit", type=int, default=100, help="max tasks to list")
+def tasks(action: str, task_type: str, payload: str, priority: int, status: Optional[str],
+          limit: int):
+    """Inspect the shared task queue and agent workers (coordination layer)."""
+    store = get_store()
+    from .coordination import get_coordinator
+    coordinator = get_coordinator(store=store)
+    if action == "stats":
+        stats = coordinator.get_stats()
+        for key, value in stats.items():
+            if key != "timestamp":
+                click.echo(f"{key}: {value}")
+        return
+    if action == "enqueue":
+        try:
+            import json as _json
+            data = _json.loads(payload or "{}")
+        except ValueError:
+            raise click.ClickException("--payload must be valid JSON")
+        task_id = coordinator.enqueue_task(task_type, data, priority)
+        click.echo(f"enqueued task {task_id}")
+        return
+    tasks_list = coordinator.list_tasks(status, limit)
+    if not tasks_list:
+        click.echo("task queue is empty")
+        return
+    for t in tasks_list:
+        click.echo(f"• {t.task_id}  {t.task_type}  {t.status}  "
+                   f"prio={t.priority}  retries={t.retry_count}")
+    click.echo(f"\nworkers: {len(coordinator.list_agents())} active")
 
 
 # ------------------------------------------------------------------- safety

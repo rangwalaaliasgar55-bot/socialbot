@@ -292,9 +292,19 @@ class AgentEngine:
         return reports
 
     # -------------------------------------------------------------- trend analyzer
-    def run_trends(self, create_drafts: bool = True) -> List[Dict[str, Any]]:
+    def run_trends(self, create_drafts: bool = True,
+                   include_real: bool = True) -> List[Dict[str, Any]]:
         from .feeds import capture_trends
-        return capture_trends(self.store, self.http, create_drafts=create_drafts)
+        reports = capture_trends(self.store, self.http, create_drafts=create_drafts)
+        if include_real:
+            try:
+                from .trend_analyzer import RealTrendAnalyzer
+                analyzer = RealTrendAnalyzer(session=self.http.session)
+                reports += analyzer.capture(self.store, create_drafts=create_drafts)
+            except Exception as exc:
+                reports.append({"platform": "trend-analyzer", "ok": False,
+                                "error": str(exc)})
+        return reports
 
     # ------------------------------------------------------------------- run all
     def run_all(self) -> Dict[str, Any]:

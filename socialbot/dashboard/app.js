@@ -598,12 +598,66 @@ async function renderAgents() {
           <button class="btn danger small" onclick="delFeed('${f.id}')">delete</button>
         </td></tr>`).join("")
     : `<tr><td colspan="5" class="empty">No content sources — add an RSS feed to auto-generate drafts</td></tr>`);
+  renderMonitoring();
 }
 $("ag-run-all").onclick = async () => { try { const r = await api("/api/agents/run", { method: "POST" }); toast(`Agents done: ${r.mentions.length} mentions, ${r.inbox.length} inbox, ${r.competitors.length} competitors, ${r.trends.length} trends`); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
 $("ag-mon-new").onclick = () => monModal(null);
 $("ag-cmp-new").onclick = () => cmpModal(null);
 $("ag-inb-new").onclick = () => inbModal(null);
 $("ag-feed-new").onclick = () => feedModal(null);
+$("ag-mon-refresh").onclick = () => renderMonitoring();
+
+async function renderMonitoring() {
+  let stats = {}, agents = [], tasks = [], health = { components: {} };
+  try {
+    const [s, a, t, m] = await Promise.all([
+      api("/api/agents"), api("/api/tasks?limit=20"), api("/api/tasks?limit=20"),
+      api("/api/monitoring")]);
+    stats = s.stats || {}; agents = s.agents || [];
+    tasks = t.tasks || []; health = m.health || {};
+  } catch (e) { toast("Monitoring refresh failed: " + e.message); }
+  $("ag-stats").innerHTML = [
+    stat("Active workers", stats.active_agents ?? "—"),
+    stat("Pending tasks", stats.pending_tasks ?? "—"),
+    stat("Completed today", stats.completed_today ?? "—"),
+    stat("Failed today", stats.failed_today ?? "—")].join("");
+
+  $("ag-workers").innerHTML = `<tr><th>Agent</th><th>Status</th><th>Heartbeat</th><th>Tasks done</th><th>Current task</th></tr>` +
+    (agents.length ? agents.map((a) => `
+      <tr class="${a.status === "active" ? "" : "dim"}">
+        <td class="mono">${esc(a.agent_id)}</td>
+        <td><span class="chip ${a.status === "active" ? "s-published" : "s-draft"}">${esc(a.status)}</span></td>
+        <td class="small muted">${a.last_heartbeat ? fmtWhen(a.last_heartbeat) : "—"}</td>
+        <td>${a.tasks_completed} ✓ / ${a.tasks_failed} ✗</td>
+        <td class="small mono">${a.current_task ? esc(a.current_task) : "—"}</td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">No workers registered yet</td></tr>`);
+
+  $("ag-task-table").innerHTML = `<tr><th>Task</th><th>Type</th><th>Status</th><th>Priority</th><th>Retries</th><th>Claimed by</th></tr>` +
+    (tasks.length ? tasks.map((t) => `
+      <tr>
+        <td class="mono">${esc(t.task_id)}</td>
+        <td class="mono">${esc(t.task_type)}</td>
+        <td><span class="chip">${esc(t.status)}</span></td>
+        <td>${t.priority}</td>
+        <td>${t.retry_count}/${t.max_retries}</td>
+        <td class="small mono">${t.claimed_by ? esc(t.claimed_by) : "—"}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="empty">Queue is empty — enqueue work with <span class="mono">socialbot tasks enqueue --type publish</span></td></tr>`);
+
+  const comps = health.components || {};
+  $("ag-health").innerHTML = `<tr><th>Component</th><th>Status</th><th>Latency</th><th>Message</th></tr>` +
+    (Object.keys(comps).length ? Object.keys(comps).map((k) => {
+      const c = comps[k];
+      const cls = c.status === "healthy" ? "s-published" : (c.status === "degraded" ? "s-scheduled" : "s-failed");
+      return `<tr><td>${esc(c.component)}</td><td><span class="chip ${cls}">${esc(c.status)}</span></td>
+        <td class="small">${c.latency_ms != null ? c.latency_ms + " ms" : "—"}</td>
+        <td class="small muted">${esc(c.message)}</td></tr>`;
+    }).join("")
+    : `<tr><td colspan="4" class="empty">No health checks run yet</td></tr>`);
+}
+
+function stat(label, value) {
+  return `<div class="stat"><div class="stat-value">${esc(String(value))}</div><div class="stat-label">${esc(label)}</div></div>`;
+}
 $("ag-feed-pull").onclick = async () => { for (const f of (S.feeds || [])) { await api(`/api/feeds/${f.id}/run`, { method: "POST" }); } toast("Feeds pulled"); renderAgents(); };
 window.runMon = async (id) => { try { const r = await api(`/api/monitors/mention/${id}/run`, { method: "POST" }); toast(r.ok ? `Found ${r.found}, acted ${r.acted}` : "Failed: " + r.error); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
 window.runCmp = async (id) => { try { const r = await api(`/api/monitors/competitor/${id}/run`, { method: "POST" }); toast(`Found ${r.recommendations} gaps, ${r.drafts_created} drafts`); } catch (e) { toast("Error: " + e.message); } renderAgents(); };

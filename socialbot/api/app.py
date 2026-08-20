@@ -21,11 +21,14 @@ from pydantic import BaseModel, Field
 from .. import __version__
 from .. import ai as ai_mod
 from ..agents import AgentEngine
+from ..ai_engine import AIEngine, ContentStrategy
 from ..analytics import refresh_metrics, summary, to_csv
 from ..bot import BotEngine
+from ..coordination import get_coordinator
 from ..http import HttpClient
 from ..models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
                       Post, PostStatus, dumps, iso, parse_dt, utcnow)
+from ..monitoring import get_monitoring
 from ..platforms import PlatformError, platform_meta, platform_names, create_platform
 from ..publisher import Publisher
 from ..scheduler import Scheduler
@@ -162,6 +165,22 @@ class AnalyzeIn(BaseModel):
     text: str
 
 
+class TaskIn(BaseModel):
+    task_type: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    priority: int = 0
+    max_retries: int = 3
+
+
+class StrategyIn(BaseModel):
+    topic: str
+    platform: str = "linkedin"
+    tone: str = "professional yet empathetic"
+    target_audience: str = "general audience"
+    trending_keywords: List[str] = Field(default_factory=list)
+    seo_goal: str = "engagement"
+
+
 # ----------------------------------------------------------------------- app
 def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> FastAPI:
     app = FastAPI(title="SocialBot API", version=__version__,
@@ -189,6 +208,8 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     state["scheduler"] = Scheduler(state["store"], state["publisher"])
     state["bot"] = BotEngine(state["store"], state["http"])
     state["agents"] = AgentEngine(state["store"], state["http"])
+    state["coordinator"] = get_coordinator(store=state["store"])
+    state["monitoring"] = get_monitoring()
     app.state.sb = state
 
     if with_scheduler:
@@ -621,6 +642,59 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     def make_report(month: Optional[str] = None, webhook: Optional[str] = None):
         from ..reports import save_and_deliver
         return save_and_deliver(state["store"], month, webhook)
+
+    # ------------------------------------------------------ coordination & tasks
+    @app.get("/api/agents")
+    def list_agent_workers(include_dead: bool = False):
+        coordinator = state["coordinator"]
+        return {"stats": coordinator.get_stats(),
+                "agents": [a.to_dict() for a in coordinator.list_agents(include_dead)]}
+
+    @app.get("/api/tasks")
+    def list_tasks(status: Optional[str] = None, limit: int = 100):
+        return {"tasks": [t.to_dict() for t in state["coordinator"].list_tasks(status, limit)]}
+
+    @app.post("/api/tasks")
+    def enqueue_task(body: TaskIn):
+        task_id = state["coordinator"].enqueue_task(
+            body.task_type, body.payload, body.priority, body.max_retries)
+        return {"task_id": task_id}
+
+    @app.get("/api/tasks/{task_id}")
+    def get_task(task_id: str):
+        task = state["coordinator"].get_task(task_id)
+        if task is None:
+            raise HTTPException(404, "task not found")
+        return task.to_dict()
+
+    # ------------------------------------------------------------------ monitoring
+    @app.get("/api/monitoring")
+    def monitoring_status():
+        monitoring = state["monitoring"]
+        monitoring.health.run_checks()
+        return {
+            "health": monitoring.health.get_health_report(),
+            "metrics": monitoring.metrics.get_all_metrics(),
+            "resources": monitoring.resource_monitor.get_usage(),
+            "timestamp": iso(utcnow()),
+        }
+
+    # --------------------------------------------------------- trend strategies
+    @app.post("/api/trends/strategy")
+    def trend_strategy(platform: str = "linkedin"):
+        from ..trend_analyzer import RealTrendAnalyzer
+        return RealTrendAnalyzer(session=state["http"].session).generate_content_strategy(platform)
+
+    # ------------------------------------------------------------ AI content kit
+    @app.post("/api/ai/content")
+    def ai_content(body: StrategyIn):
+        engine = AIEngine()
+        strategy = ContentStrategy(
+            topic=body.topic, platform=body.platform, tone=body.tone,
+            target_audience=body.target_audience,
+            trending_keywords=body.trending_keywords, seo_goal=body.seo_goal,
+        )
+        return engine.create_full_content_package(strategy).to_dict()
 
     return app
 
