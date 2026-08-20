@@ -65,6 +65,10 @@ class YouTube(Platform):
                  "https://www.googleapis.com/auth/youtube.readonly",
         "client_id_key": "client_id",
         "client_secret_key": "client_secret",
+        "client_id_hint": (r"^\d{10,20}-[a-z0-9]+\.apps\.googleusercontent\.com$",
+                           "a Google client id ends with .apps.googleusercontent.com "
+                           "(e.g. 123456789012-abc123.apps.googleusercontent.com) — "
+                           "copy it from console.cloud.google.com > APIs & Services > Credentials"),
     }
 
     def _headers(self) -> Dict[str, str]:

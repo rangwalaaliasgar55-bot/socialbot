@@ -121,10 +121,13 @@ def oauth_client(tmp_path, monkeypatch):
         yield c, store
 
 
+GOOGLE_CID = "123456789012-abc123.apps.googleusercontent.com"
+
+
 def test_api_oauth_start_and_callback(oauth_client):
     c, store = oauth_client
     start = c.post("/api/accounts/youtube/oauth/start",
-                   json={"client_id": "cid", "client_secret": "sec"}).json()
+                   json={"client_id": GOOGLE_CID, "client_secret": "sec"}).json()
     assert "auth_url" in start and start["auth_url"].startswith("https://accounts.google.com/")
     assert start["redirect_uri"].endswith("/api/accounts/youtube/oauth/callback")
     assert "state=" in start["auth_url"]
@@ -136,7 +139,15 @@ def test_api_oauth_start_and_callback(oauth_client):
     account = store.get_account("youtube")
     assert account["config"]["access_token"] == "AT"
     assert account["config"]["refresh_token"] == "RT"
-    assert account["config"]["client_id"] == "cid"
+    assert account["config"]["client_id"] == GOOGLE_CID
+
+
+def test_api_oauth_rejects_invalid_client_id(oauth_client):
+    c, store = oauth_client
+    resp = c.post("/api/accounts/youtube/oauth/start",
+                  json={"client_id": "not-a-real-id", "client_secret": "sec"})
+    assert resp.status_code == 400
+    assert "doesn't look like a Google client id" in resp.json()["detail"]
 
 
 def test_api_oauth_rejects_non_oauth_platform(oauth_client):

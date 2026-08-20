@@ -30,8 +30,8 @@ from ..http import HttpClient
 from ..models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
                       Post, PostStatus, dumps, iso, parse_dt, utcnow)
 from ..monitoring import get_monitoring
-from ..oauth import (build_auth_url, exchange_code, new_state, pop_pending_state,
-                     store_pending_state)
+from ..oauth import (build_auth_url, clean_secret, client_id_problem, exchange_code,
+                     new_state, pop_pending_state, store_pending_state)
 from ..platforms import PlatformError, platform_meta, platform_names, create_platform
 from ..publisher import Publisher
 from ..scheduler import Scheduler
@@ -478,10 +478,14 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         for key, value in ((oauth.get("client_id_key", "client_id"), body.client_id),
                            (oauth.get("client_secret_key", "client_secret"), body.client_secret)):
             if value:
-                config[key] = value
-        if not config.get(oauth.get("client_id_key", "client_id")):
+                config[key] = clean_secret(value)
+        cid = config.get(oauth.get("client_id_key", "client_id"), "")
+        if not cid:
             raise HTTPException(400, f"missing {oauth.get('client_id_key', 'client_id')} — "
                                      f"paste it first (see the guide above)")
+        problem = client_id_problem(platform, cid)
+        if problem:
+            raise HTTPException(400, problem)
         state["store"].save_account(platform, config, existing.get("label", ""),
                                     existing.get("enabled", True))
 

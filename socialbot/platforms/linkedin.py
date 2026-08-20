@@ -49,6 +49,9 @@ class LinkedIn(Platform):
         "client_id_key": "client_id",
         "client_secret_key": "client_secret",
         "from_id_token": ["member_id"],
+        "client_id_hint": (r"^86[a-z0-9]{18}$",
+                           "a LinkedIn client id starts with '86' and is 20 characters — "
+                           "copy it from developer.linkedin.com > My Apps > Auth"),
     }
 
     def _headers(self) -> Dict[str, str]:

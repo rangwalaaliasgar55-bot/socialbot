@@ -49,6 +49,9 @@ class Twitter(Platform):
         "client_id_key": "client_id",
         "client_secret_key": "client_secret",
         "pkce": True,
+        "client_id_hint": (r"^[A-Za-z0-9]{20,30}$",
+                           "an X client id is a ~25-character alphanumeric string — "
+                           "copy it from developer.x.com → your app → Keys and tokens"),
     }
 
     def _headers(self) -> Dict[str, str]:

@@ -28,6 +28,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -121,6 +122,28 @@ def decode_jwt_payload(token: str) -> Dict[str, Any]:
 
 def new_state() -> str:
     return secrets.token_urlsafe(24)
+
+
+def clean_secret(value: Optional[str]) -> str:
+    """Strip whitespace and control characters a paste may have picked up."""
+    return re.sub(r"[\x00-\x20\x7f]+", "", value or "").strip()
+
+
+def client_id_problem(platform_name: str, client_id: str) -> str:
+    """Return a human-readable problem with a client id, or '' if it's fine.
+
+    Catches pasted garbage (emoji, mojibake, truncated strings) before the
+    provider gets a chance to reject it with a cryptic error.
+    """
+    meta = _oauth_meta(platform_name)
+    hint = meta.get("client_id_hint")
+    if not hint:
+        return ""
+    pattern, message = hint
+    if not re.fullmatch(pattern, client_id):
+        return (f"That doesn't look like a {meta.get('provider', platform_name)} "
+                f"client id: {message}")
+    return ""
 
 
 def build_auth_url(platform_name: str, client_id: str, redirect_uri: str,

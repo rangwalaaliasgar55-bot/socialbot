@@ -216,8 +216,15 @@ def connect(platform_name: str, port: int):
     sec_key = meta.get("client_secret_key", "client_secret")
     if not config.get(cid_key):
         config[cid_key] = click.prompt(f"{cls.display_name} OAuth client id", hide_input=True)
+    from .oauth import client_id_problem, clean_secret
+    config[cid_key] = clean_secret(config.get(cid_key, ""))
+    problem = client_id_problem(platform_name, config.get(cid_key, ""))
+    if problem:
+        raise click.ClickException(problem)
     if meta.get(sec_key) and not config.get(sec_key):
         config[sec_key] = click.prompt(f"{cls.display_name} OAuth client secret", hide_input=True)
+    if meta.get(sec_key):
+        config[sec_key] = clean_secret(config.get(sec_key, ""))
     store.save_account(platform_name, config, existing.get("label", ""),
                        existing.get("enabled", True))
 
