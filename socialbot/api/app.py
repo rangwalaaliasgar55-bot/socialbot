@@ -20,10 +20,12 @@ from pydantic import BaseModel, Field
 
 from .. import __version__
 from .. import ai as ai_mod
+from ..agents import AgentEngine
 from ..analytics import refresh_metrics, summary, to_csv
 from ..bot import BotEngine
 from ..http import HttpClient
-from ..models import BotRule, Post, PostStatus, dumps, iso, parse_dt, utcnow
+from ..models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
+                      Post, PostStatus, dumps, iso, parse_dt, utcnow)
 from ..platforms import PlatformError, platform_meta, platform_names, create_platform
 from ..publisher import Publisher
 from ..scheduler import Scheduler
@@ -47,6 +49,11 @@ class PostIn(BaseModel):
     signature: Optional[str] = None
     webhook_url: Optional[str] = None
     publish_now: bool = False
+    variants: Dict[str, str] = Field(default_factory=dict)
+    thread: bool = False
+    thread_parts: List[str] = Field(default_factory=list)
+    best_time: bool = False
+    origin: Optional[str] = None
 
 
 class PostPatch(BaseModel):
@@ -59,6 +66,9 @@ class PostPatch(BaseModel):
     tag: Optional[str] = None
     signature: Optional[str] = None
     webhook_url: Optional[str] = None
+    variants: Optional[Dict[str, str]] = None
+    thread: Optional[bool] = None
+    best_time: Optional[bool] = None
 
 
 class AccountIn(BaseModel):
@@ -85,6 +95,71 @@ class RuleIn(BaseModel):
     limit_per_hour: int = 20
     dry_run: bool = True
     enabled: bool = True
+    interests: str = ""
+    min_sentiment: float = 0.0
+    whitelist_only: bool = False
+    skip_blacklisted: bool = True
+    max_per_day: int = 200
+
+
+class MentionRuleIn(BaseModel):
+    name: str = "untitled monitor"
+    platform: str
+    query: str = ""
+    action: str = "like"
+    comment_template: str = ""
+    limit_per_run: int = 5
+    limit_per_hour: int = 20
+    dry_run: bool = True
+    dedupe: bool = True
+    min_sentiment: float = 0.0
+    whitelist_only: bool = False
+    skip_blacklisted: bool = True
+    enabled: bool = True
+
+
+class CompetitorRuleIn(BaseModel):
+    name: str = "untitled watch"
+    platform: str
+    competitors: List[str] = Field(default_factory=list)
+    interests: str = ""
+    create_drafts: bool = True
+    limit_per_competitor: int = 10
+    enabled: bool = True
+
+
+class InboxRuleIn(BaseModel):
+    name: str = "untitled responder"
+    platform: str
+    intents: List[str] = Field(default_factory=list)
+    auto_reply: bool = True
+    reply_template: str = ""
+    escalate_webhook: Optional[str] = None
+    max_per_run: int = 10
+    enabled: bool = True
+
+
+class FeedIn(BaseModel):
+    name: str
+    kind: str = "rss"
+    url: str = ""
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    interval_min: int = 60
+    n_drafts: int = 3
+    auto_draft: bool = True
+    target_platforms: List[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class SafetyIn(BaseModel):
+    list_type: str = "blacklist"
+    platform: str = ""
+    username: str
+    note: str = ""
+
+
+class AnalyzeIn(BaseModel):
+    text: str
 
 
 # ----------------------------------------------------------------------- app
@@ -113,6 +188,7 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     state["publisher"] = Publisher(state["store"], state["http"])
     state["scheduler"] = Scheduler(state["store"], state["publisher"])
     state["bot"] = BotEngine(state["store"], state["http"])
+    state["agents"] = AgentEngine(state["store"], state["http"])
     app.state.sb = state
 
     if with_scheduler:
@@ -158,9 +234,15 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         if unknown:
             raise HTTPException(422, f"unknown platforms: {', '.join(unknown)}")
         scheduled = parse_dt(body.scheduled_at) if body.scheduled_at else None
+        if body.best_time and scheduled is None:
+            from ..adaptive import suggest_time
+            picked = suggest_time(state["store"], body.platforms[0])
+            scheduled = parse_dt(picked) if picked else utcnow()
         post = Post(text=body.text, media=body.media, platforms=body.platforms,
                     tag=body.tag, signature=body.signature, webhook_url=body.webhook_url,
-                    recurrence=body.recurrence,
+                    recurrence=body.recurrence, variants=body.variants,
+                    thread=body.thread, thread_parts=body.thread_parts,
+                    best_time=body.best_time, origin=body.origin,
                     scheduled_at=iso(scheduled) if scheduled else None)
         if body.publish_now or scheduled is None and not body.recurrence:
             return state["publisher"].publish_now(post).to_dict()
@@ -251,6 +333,12 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         if body.scheduled_at is not None:
             scheduled = parse_dt(body.scheduled_at)
             post.scheduled_at = iso(scheduled) if scheduled else None
+        if body.variants is not None:
+            post.variants = body.variants
+        if body.thread is not None:
+            post.thread = body.thread
+        if body.best_time is not None:
+            post.best_time = body.best_time
         state["store"].save_post(post)
         return post.to_dict()
 
@@ -367,6 +455,172 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
     @app.get("/api/events")
     def events(limit: int = 100):
         return state["store"].list_events(limit)
+
+    # ---------------------------------------------------------------- analyze
+    @app.post("/api/analyze")
+    def analyze(body: AnalyzeIn):
+        from ..intelligence import analyze as nlp_analyze
+        return nlp_analyze(body.text)
+
+    # ------------------------------------------------------------ safety lists
+    @app.get("/api/safety")
+    def list_safety(list_type: Optional[str] = None):
+        from ..safety import Safety
+        return [r.to_dict() for r in Safety(state["store"]).list(list_type)]
+
+    @app.post("/api/safety", status_code=201)
+    def add_safety(body: SafetyIn):
+        from ..safety import Safety
+        return Safety(state["store"]).add(body.list_type, body.platform,
+                                          body.username, body.note).to_dict()
+
+    @app.delete("/api/safety/{rule_id}")
+    def delete_safety(rule_id: str):
+        from ..safety import Safety
+        return {"ok": Safety(state["store"]).remove(rule_id)}
+
+    # ---------------------------------------------------------------- profiles
+    @app.get("/api/profiles")
+    def list_profiles(limit: int = 200):
+        return [p.to_dict() for p in state["store"].list_profiles(limit)]
+
+    @app.get("/api/profiles/similar")
+    def similar_profiles(interests: str, platform: str = "mock", limit: int = 10):
+        from ..profiles import similar_targets
+        return similar_targets(state["store"], platform,
+                               [i.strip() for i in interests.split(",") if i.strip()],
+                               limit=limit)
+
+    # -------------------------------------------------------------- feed sources
+    @app.get("/api/feeds")
+    def list_feeds():
+        return [f.to_dict() for f in state["store"].list_feeds()]
+
+    @app.post("/api/feeds", status_code=201)
+    def create_feed(body: FeedIn):
+        if body.kind == "rss" and not body.url:
+            raise HTTPException(422, "rss feeds need a url")
+        feed = FeedSource(**body.model_dump())
+        state["store"].save_feed(feed)
+        return feed.to_dict()
+
+    @app.post("/api/feeds/{feed_id}/run")
+    def run_feed(feed_id: str):
+        from ..feeds import run_feed as run_feed_fn
+        feed = next((f for f in state["store"].list_feeds() if f.id == feed_id), None)
+        if not feed:
+            raise HTTPException(404, "feed not found")
+        return run_feed_fn(feed, state["store"], state["http"])
+
+    @app.delete("/api/feeds/{feed_id}")
+    def delete_feed(feed_id: str):
+        return {"ok": state["store"].delete_feed(feed_id)}
+
+    # ------------------------------------------------------- monitors (mention/competitor)
+    @app.get("/api/monitors")
+    def list_monitors():
+        out = []
+        for item in state["store"].list_monitors():
+            out.append({"kind": item["kind"], **item["rule"].to_dict()})
+        return out
+
+    @app.post("/api/monitors/mention", status_code=201)
+    def create_mention_monitor(body: MentionRuleIn):
+        rule = MentionRule(**body.model_dump())
+        state["store"].save_monitor("mention", rule)
+        return {"kind": "mention", **rule.to_dict()}
+
+    @app.post("/api/monitors/competitor", status_code=201)
+    def create_competitor_monitor(body: CompetitorRuleIn):
+        rule = CompetitorRule(**body.model_dump())
+        state["store"].save_monitor("competitor", rule)
+        return {"kind": "competitor", **rule.to_dict()}
+
+    @app.post("/api/monitors/mention/{rule_id}/run")
+    def run_mention_monitor(rule_id: str, dry_run: Optional[bool] = None):
+        results = state["agents"].run_mentions(rule=rule_id, dry_run=dry_run)
+        if not results:
+            raise HTTPException(404, "monitor not found")
+        return results[0]
+
+    @app.post("/api/monitors/competitor/{rule_id}/run")
+    def run_competitor_monitor(rule_id: str):
+        results = state["agents"].run_competitors(rule=rule_id)
+        if not results:
+            raise HTTPException(404, "watch not found")
+        return results[0]
+
+    @app.delete("/api/monitors/{monitor_id}")
+    def delete_monitor(monitor_id: str):
+        return {"ok": state["store"].delete_monitor(monitor_id)}
+
+    # ------------------------------------------------------------------ inbox
+    @app.get("/api/inbox")
+    def list_inbox_rules():
+        return [r.to_dict() for r in state["store"].list_inbox_rules()]
+
+    @app.post("/api/inbox", status_code=201)
+    def create_inbox_rule(body: InboxRuleIn):
+        rule = InboxRule(**body.model_dump())
+        state["store"].save_inbox_rule(rule)
+        return rule.to_dict()
+
+    @app.post("/api/inbox/{rule_id}/run")
+    def run_inbox_rule(rule_id: str):
+        results = state["agents"].run_inbox(rule=rule_id)
+        if not results:
+            raise HTTPException(404, "rule not found")
+        return results[0]
+
+    @app.delete("/api/inbox/{rule_id}")
+    def delete_inbox_rule(rule_id: str):
+        return {"ok": state["store"].delete_inbox_rule(rule_id)}
+
+    # ----------------------------------------------------------------- trends
+    @app.get("/api/trends")
+    def list_trends(platform: Optional[str] = None, limit: int = 100):
+        return state["store"].list_trends(platform, limit)
+
+    @app.post("/api/trends/capture")
+    def capture_trends(create_drafts: bool = True):
+        return {"reports": state["agents"].run_trends(create_drafts=create_drafts)}
+
+    # ------------------------------------------------------------ agents / all
+    @app.post("/api/agents/run")
+    def run_agents():
+        return state["agents"].run_all()
+
+    # ----------------------------------------------------------------- adaptive
+    @app.get("/api/adapt/best-time")
+    def best_time_endpoint(platform: Optional[str] = None):
+        from ..adaptive import best_times, human_window, schedule_summary
+        return schedule_summary(state["store"])
+
+    @app.post("/api/adapt/suggest-time")
+    def suggest_time_endpoint(platform: Optional[str] = None):
+        from ..adaptive import suggest_time
+        return {"scheduled_at": suggest_time(state["store"], platform)}
+
+    @app.post("/api/adapt/vibe")
+    def vibe_fit_endpoint(body: AnalyzeIn, platform: Optional[str] = None):
+        from ..adaptive import vibe_fit
+        return vibe_fit(state["store"], body.text, platform)
+
+    @app.post("/api/adapt/hashtags")
+    def adaptive_hashtags_endpoint(body: AnalyzeIn, platform: Optional[str] = None):
+        from ..adaptive import adaptive_hashtags
+        return {"hashtags": adaptive_hashtags(state["store"], body.text, platform)}
+
+    # ----------------------------------------------------------------- reports
+    @app.get("/api/reports")
+    def get_report(month: Optional[str] = None):
+        from ..reports import monthly_report
+        return monthly_report(state["store"], month)
+
+    @app.post("/api/reports")
+    def make_report(month: Optional[str] = None, webhook: Optional[str] = None):
+        from ..reports import save_and_deliver
+        return save_and_deliver(state["store"], month, webhook)
 
     return app
 

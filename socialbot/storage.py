@@ -11,7 +11,8 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
-from .models import BotRule, Post, dumps, loads, new_id, utcnow, iso
+from .models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
+                     Post, SafetyRule, UserProfile, dumps, loads, new_id, utcnow, iso)
 
 DEFAULT_DB = os.environ.get("SOCIALBOT_DB") or os.path.join(os.getcwd(), "socialbot.db")
 
@@ -32,7 +33,12 @@ CREATE TABLE IF NOT EXISTS posts (
     attempts INTEGER NOT NULL DEFAULT 0,
     max_attempts INTEGER NOT NULL DEFAULT 3,
     created_at TEXT NOT NULL,
-    published_at TEXT
+    published_at TEXT,
+    variants_json TEXT NOT NULL DEFAULT '{}',
+    thread INTEGER NOT NULL DEFAULT 0,
+    thread_parts_json TEXT NOT NULL DEFAULT '[]',
+    best_time INTEGER NOT NULL DEFAULT 0,
+    origin TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
 CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(scheduled_at);
@@ -68,7 +74,90 @@ CREATE TABLE IF NOT EXISTS events (
     message TEXT NOT NULL DEFAULT '',
     data_json TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS safety_rules (
+    id TEXT PRIMARY KEY,
+    list_type TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_safety_username ON safety_rules(username);
+
+CREATE TABLE IF NOT EXISTS profiles (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    username TEXT NOT NULL,
+    data_json TEXT NOT NULL DEFAULT '{}',
+    first_seen TEXT,
+    last_seen TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(platform, username)
+);
+
+CREATE TABLE IF NOT EXISTS feed_sources (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS monitors (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    data_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inbox_rules (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS trends (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    captured_at TEXT NOT NULL,
+    data_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    month TEXT NOT NULL UNIQUE,
+    data_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS seen_items (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    remote_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    UNIQUE(kind, remote_id)
+);
+
+CREATE TABLE IF NOT EXISTS rate_buckets (
+    key TEXT PRIMARY KEY,
+    tokens REAL NOT NULL,
+    last_refill TEXT NOT NULL
+);
 """
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns added after v1.1.0 to existing databases (best effort)."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(posts)").fetchall()}
+    additions = {
+        "variants_json": "TEXT NOT NULL DEFAULT '{}'",
+        "thread": "INTEGER NOT NULL DEFAULT 0",
+        "thread_parts_json": "TEXT NOT NULL DEFAULT '[]'",
+        "best_time": "INTEGER NOT NULL DEFAULT 0",
+        "origin": "TEXT",
+    }
+    for column, definition in additions.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE posts ADD COLUMN {column} {definition}")
 
 
 class Store:
@@ -80,6 +169,7 @@ class Store:
         self._write_lock = threading.RLock()
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            _migrate(conn)
 
     # ------------------------------------------------------------------ util
     @contextmanager
@@ -112,6 +202,11 @@ class Store:
             "max_attempts": row["max_attempts"],
             "created_at": row["created_at"],
             "published_at": row["published_at"],
+            "variants": loads(row["variants_json"], {}),
+            "thread": bool(row["thread"]),
+            "thread_parts": loads(row["thread_parts_json"], []),
+            "best_time": bool(row["best_time"]),
+            "origin": row["origin"],
         })
 
     # ----------------------------------------------------------------- posts
@@ -120,8 +215,9 @@ class Store:
             c.execute(
                 """INSERT INTO posts (id, text, media_json, platforms_json, status, scheduled_at,
                      recurrence_json, tag, signature, webhook_url, results_json, error, attempts,
-                     max_attempts, created_at, published_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     max_attempts, created_at, published_at, variants_json, thread,
+                     thread_parts_json, best_time, origin)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                      text=excluded.text, media_json=excluded.media_json,
                      platforms_json=excluded.platforms_json, status=excluded.status,
@@ -129,11 +225,15 @@ class Store:
                      tag=excluded.tag, signature=excluded.signature, webhook_url=excluded.webhook_url,
                      results_json=excluded.results_json, error=excluded.error,
                      attempts=excluded.attempts, max_attempts=excluded.max_attempts,
-                     published_at=excluded.published_at""",
+                     published_at=excluded.published_at, variants_json=excluded.variants_json,
+                     thread=excluded.thread, thread_parts_json=excluded.thread_parts_json,
+                     best_time=excluded.best_time, origin=excluded.origin""",
                 (post.id, post.text, dumps(post.media), dumps(post.platforms), post.status,
                  post.scheduled_at, dumps(post.recurrence), post.tag, post.signature,
                  post.webhook_url, dumps(post.results), post.error, post.attempts,
-                 post.max_attempts, post.created_at, post.published_at))
+                 post.max_attempts, post.created_at, post.published_at, dumps(post.variants),
+                 1 if post.thread else 0, dumps(post.thread_parts),
+                 1 if post.best_time else 0, post.origin))
         return post
 
     def get_post(self, post_id: str) -> Optional[Post]:
@@ -280,3 +380,209 @@ class Store:
             rows = c.execute("SELECT * FROM events ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
         return [{"id": r["id"], "ts": r["ts"], "type": r["type"], "message": r["message"],
                  "data": loads(r["data_json"], {})} for r in rows]
+
+    # ------------------------------------------------------ safety (black/white lists)
+    def save_safety_rule(self, rule: SafetyRule) -> SafetyRule:
+        with self._conn() as c:
+            c.execute("INSERT INTO safety_rules (id, list_type, platform, username, note, created_at) "
+                      "VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                      "list_type=excluded.list_type, platform=excluded.platform, "
+                      "username=excluded.username, note=excluded.note",
+                      (rule.id, rule.list_type, rule.platform, rule.username, rule.note,
+                       rule.created_at))
+        return rule
+
+    def list_safety_rules(self, list_type: Optional[str] = None) -> List[SafetyRule]:
+        q = "SELECT * FROM safety_rules"
+        args: list = []
+        if list_type:
+            q += " WHERE list_type=?"
+            args.append(list_type)
+        q += " ORDER BY created_at DESC"
+        with self._conn() as c:
+            rows = c.execute(q, args).fetchall()
+        return [SafetyRule(id=r["id"], list_type=r["list_type"], platform=r["platform"],
+                           username=r["username"], note=r["note"], created_at=r["created_at"])
+                for r in rows]
+
+    def delete_safety_rule(self, rule_id: str) -> bool:
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM safety_rules WHERE id=?", (rule_id,))
+        return cur.rowcount > 0
+
+    # ------------------------------------------------------------------ profiles
+    def upsert_profile(self, profile: UserProfile) -> UserProfile:
+        with self._conn() as c:
+            c.execute(
+                """INSERT INTO profiles (id, platform, username, data_json, first_seen, last_seen, updated_at)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(platform, username) DO UPDATE SET
+                     data_json=excluded.data_json, first_seen=excluded.first_seen,
+                     last_seen=excluded.last_seen, updated_at=excluded.updated_at""",
+                (profile.id, profile.platform, profile.username, dumps(profile.data),
+                 profile.first_seen, profile.last_seen, profile.updated_at))
+        return profile
+
+    def get_profile(self, platform: str, username: str) -> Optional[UserProfile]:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM profiles WHERE platform=? AND username=?",
+                            (platform, username)).fetchone()
+        if not row:
+            return None
+        return UserProfile(id=row["id"], platform=row["platform"], username=row["username"],
+                           data=loads(row["data_json"], {}), first_seen=row["first_seen"],
+                           last_seen=row["last_seen"], updated_at=row["updated_at"])
+
+    def list_profiles(self, limit: int = 500) -> List[UserProfile]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM profiles ORDER BY updated_at DESC LIMIT ?",
+                             (limit,)).fetchall()
+        return [UserProfile(id=r["id"], platform=r["platform"], username=r["username"],
+                            data=loads(r["data_json"], {}), first_seen=r["first_seen"],
+                            last_seen=r["last_seen"], updated_at=r["updated_at"]) for r in rows]
+
+    # --------------------------------------------------------------- feed sources
+    def save_feed(self, feed: FeedSource) -> FeedSource:
+        with self._conn() as c:
+            c.execute("INSERT INTO feed_sources (id, data_json) VALUES (?,?) "
+                      "ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json",
+                      (feed.id, dumps(feed.to_dict())))
+        return feed
+
+    def list_feeds(self, only_enabled: bool = False) -> List[FeedSource]:
+        with self._conn() as c:
+            rows = c.execute("SELECT data_json FROM feed_sources ORDER BY id").fetchall()
+        feeds = [FeedSource.from_dict(loads(r["data_json"])) for r in rows]
+        if only_enabled:
+            feeds = [f for f in feeds if f.enabled]
+        return feeds
+
+    def delete_feed(self, feed_id: str) -> bool:
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM feed_sources WHERE id=?", (feed_id,))
+        return cur.rowcount > 0
+
+    # -------------------------------------------------------------- monitors (mention/competitor)
+    def save_monitor(self, kind: str, rule: Any) -> Any:
+        with self._conn() as c:
+            c.execute("INSERT INTO monitors (id, kind, data_json) VALUES (?,?,?) "
+                      "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, "
+                      "data_json=excluded.data_json",
+                      (rule.id, kind, dumps(rule.to_dict())))
+        return rule
+
+    def list_monitors(self, kind: Optional[str] = None, only_enabled: bool = False) -> List[Dict[str, Any]]:
+        q = "SELECT kind, data_json FROM monitors"
+        args: list = []
+        if kind:
+            q += " WHERE kind=?"
+            args.append(kind)
+        q += " ORDER BY id"
+        with self._conn() as c:
+            rows = c.execute(q, args).fetchall()
+        out = []
+        for r in rows:
+            data = loads(r["data_json"], {})
+            rule = (MentionRule.from_dict(data) if r["kind"] == "mention"
+                    else CompetitorRule.from_dict(data))
+            if only_enabled and not rule.enabled:
+                continue
+            out.append({"kind": r["kind"], "rule": rule})
+        return out
+
+    def delete_monitor(self, monitor_id: str) -> bool:
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM monitors WHERE id=?", (monitor_id,))
+        return cur.rowcount > 0
+
+    # --------------------------------------------------------------- inbox rules
+    def save_inbox_rule(self, rule: InboxRule) -> InboxRule:
+        with self._conn() as c:
+            c.execute("INSERT INTO inbox_rules (id, data_json) VALUES (?,?) "
+                      "ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json",
+                      (rule.id, dumps(rule.to_dict())))
+        return rule
+
+    def list_inbox_rules(self, only_enabled: bool = False) -> List[InboxRule]:
+        with self._conn() as c:
+            rows = c.execute("SELECT data_json FROM inbox_rules ORDER BY id").fetchall()
+        rules = [InboxRule.from_dict(loads(r["data_json"])) for r in rows]
+        if only_enabled:
+            rules = [r for r in rules if r.enabled]
+        return rules
+
+    def delete_inbox_rule(self, rule_id: str) -> bool:
+        with self._conn() as c:
+            cur = c.execute("DELETE FROM inbox_rules WHERE id=?", (rule_id,))
+        return cur.rowcount > 0
+
+    # ------------------------------------------------------------------- trends
+    def save_trend(self, platform: str, topic: str, source: str = "",
+                   data: Optional[Dict[str, Any]] = None) -> str:
+        tid = new_id("trd")
+        with self._conn() as c:
+            c.execute("INSERT INTO trends (id, platform, topic, source, captured_at, data_json) "
+                      "VALUES (?,?,?,?,?,?)",
+                      (tid, platform, topic, source, iso(utcnow()), dumps(data or {})))
+        return tid
+
+    def list_trends(self, platform: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        q = "SELECT * FROM trends"
+        args: list = []
+        if platform:
+            q += " WHERE platform=?"
+            args.append(platform)
+        q += " ORDER BY captured_at DESC LIMIT ?"
+        args.append(limit)
+        with self._conn() as c:
+            rows = c.execute(q, args).fetchall()
+        return [{"id": r["id"], "platform": r["platform"], "topic": r["topic"],
+                 "source": r["source"], "captured_at": r["captured_at"],
+                 "data": loads(r["data_json"], {})} for r in rows]
+
+    # ------------------------------------------------------------------ reports
+    def save_report(self, month: str, data: Dict[str, Any]) -> str:
+        rid = new_id("rep")
+        with self._conn() as c:
+            c.execute("INSERT INTO reports (id, month, data_json, created_at) VALUES (?,?,?,?) "
+                      "ON CONFLICT(month) DO UPDATE SET data_json=excluded.data_json, "
+                      "created_at=excluded.created_at",
+                      (rid, month, dumps(data), iso(utcnow())))
+        return rid
+
+    def get_report(self, month: str) -> Optional[Dict[str, Any]]:
+        with self._conn() as c:
+            row = c.execute("SELECT data_json FROM reports WHERE month=?", (month,)).fetchone()
+        return loads(row["data_json"]) if row else None
+
+    # --------------------------------------------------------------- seen items (dedupe)
+    def mark_seen(self, kind: str, platform: str, remote_id: str) -> bool:
+        """Record a processed item. Returns False when it was already seen."""
+        try:
+            with self._conn() as c:
+                cur = c.execute(
+                    "INSERT INTO seen_items (id, kind, platform, remote_id, ts) VALUES (?,?,?,?,?) "
+                    "ON CONFLICT(kind, remote_id) DO NOTHING",
+                    (new_id("seen"), kind, platform, remote_id, iso(utcnow())))
+                return cur.rowcount > 0
+        except sqlite3.IntegrityError:  # pragma: no cover
+            return False
+
+    def is_seen(self, kind: str, remote_id: str) -> bool:
+        with self._conn() as c:
+            row = c.execute("SELECT 1 FROM seen_items WHERE kind=? AND remote_id=?",
+                            (kind, remote_id)).fetchone()
+        return row is not None
+
+    # ------------------------------------------------------------- rate limiter state
+    def get_bucket(self, key: str) -> Optional[Dict[str, Any]]:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM rate_buckets WHERE key=?", (key,)).fetchone()
+        return {"tokens": row["tokens"], "last_refill": row["last_refill"]} if row else None
+
+    def save_bucket(self, key: str, tokens: float, last_refill: str) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO rate_buckets (key, tokens, last_refill) VALUES (?,?,?) "
+                      "ON CONFLICT(key) DO UPDATE SET tokens=excluded.tokens, "
+                      "last_refill=excluded.last_refill",
+                      (key, tokens, last_refill))

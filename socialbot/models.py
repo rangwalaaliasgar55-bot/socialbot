@@ -72,11 +72,16 @@ class Post:
     max_attempts: int = 3
     created_at: str = field(default_factory=lambda: iso(utcnow()))
     published_at: Optional[str] = None
+    variants: Dict[str, str] = field(default_factory=dict)  # per-platform text overrides
+    thread: bool = False                                    # split long text into a thread/carousel
+    thread_parts: List[str] = field(default_factory=list)   # precomputed parts (after auto-split)
+    best_time: bool = False                                 # schedule at the optimal engagement window
+    origin: Optional[str] = None                            # feed:name | trend:platform:topic | competitor:id
 
     # -- convenience -------------------------------------------------------
     def effective_text(self, platform: Optional[str] = None, account_signature: Optional[str] = None) -> str:
         sig = self.signature if self.signature is not None else account_signature
-        text = self.text.rstrip()
+        text = (self.variants.get(platform) if platform and self.variants.get(platform) else self.text).rstrip()
         if sig:
             text = f"{text}\n\n{sig.strip()}"
         return text
@@ -134,12 +139,161 @@ class BotRule:
     last_run: Optional[str] = None
     last_result: Optional[Dict[str, Any]] = None
     total_actions: int = 0
+    interests: str = ""                    # comma-separated topics; empty = any (smart engagement filter)
+    min_sentiment: float = 0.0             # only engage items scoring at least this (-1..1)
+    whitelist_only: bool = False           # only engage whitelisted accounts
+    skip_blacklisted: bool = True          # never engage blacklisted accounts
+    max_per_day: int = 200                 # daily safety cap across all runs
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "BotRule":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
+
+
+@dataclass
+class MentionRule:
+    """Mention & hashtag monitor: watch a query, meaningfully engage new posts."""
+
+    id: str = field(default_factory=lambda: new_id("mon"))
+    name: str = "untitled monitor"
+    platform: str = ""                     # e.g. bluesky
+    query: str = ""                        # hashtag / keyword / @mention watched
+    action: str = "like"                   # like | follow | comment | repost | quote
+    comment_template: str = ""             # when action == comment / quote
+    limit_per_run: int = 5
+    limit_per_hour: int = 20
+    dry_run: bool = True
+    dedupe: bool = True                    # only act on posts not seen before
+    min_sentiment: float = 0.0
+    whitelist_only: bool = False
+    skip_blacklisted: bool = True
+    enabled: bool = True
+    created_at: str = field(default_factory=lambda: iso(utcnow()))
+    last_run: Optional[str] = None
+    last_result: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "MentionRule":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
+
+
+@dataclass
+class InboxRule:
+    """Inbox responder: auto-answer DMs/mentions that match known intents."""
+
+    id: str = field(default_factory=lambda: new_id("inb"))
+    name: str = "untitled responder"
+    platform: str = ""                     # e.g. mock
+    intents: List[str] = field(default_factory=lambda: ["pricing", "demo", "thanks", "complaint"])
+    auto_reply: bool = True
+    reply_template: str = ""               # override per-intent replies
+    escalate_webhook: Optional[str] = None # notified on complaint / unknown intents
+    max_per_run: int = 10
+    enabled: bool = True
+    created_at: str = field(default_factory=lambda: iso(utcnow()))
+    last_run: Optional[str] = None
+    last_result: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "InboxRule":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
+
+
+@dataclass
+class CompetitorRule:
+    """Competitor watch: track competitor accounts and surface content gaps."""
+
+    id: str = field(default_factory=lambda: new_id("cmp"))
+    name: str = "untitled watch"
+    platform: str = ""                     # e.g. mastodon
+    competitors: List[str] = field(default_factory=list)  # usernames to watch
+    interests: str = ""                    # comma-separated topics that matter to you
+    create_drafts: bool = True             # auto-draft posts for uncovered topics
+    limit_per_competitor: int = 10
+    enabled: bool = True
+    created_at: str = field(default_factory=lambda: iso(utcnow()))
+    last_run: Optional[str] = None
+    last_result: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "CompetitorRule":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
+
+
+@dataclass
+class FeedSource:
+    """Content source: an RSS feed or a curated list of items."""
+
+    id: str = field(default_factory=lambda: new_id("feed"))
+    name: str = "untitled source"
+    kind: str = "rss"                      # rss | curated
+    url: str = ""                          # RSS URL (kind == rss)
+    items: List[Dict[str, Any]] = field(default_factory=list)  # curated items [{title, link, summary}]
+    interval_min: int = 60                 # how often to pull
+    n_drafts: int = 3                      # drafts to generate per pull
+    auto_draft: bool = True                # save generated posts as drafts
+    target_platforms: List[str] = field(default_factory=list)  # default platforms for drafts
+    enabled: bool = True
+    created_at: str = field(default_factory=lambda: iso(utcnow()))
+    last_run: Optional[str] = None
+    last_result: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "FeedSource":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
+
+
+@dataclass
+class SafetyRule:
+    """Blacklist / whitelist entry: never (or always) engage this account."""
+
+    id: str = field(default_factory=lambda: new_id("sft"))
+    list_type: str = "blacklist"           # blacklist | whitelist
+    platform: str = ""                     # '' = all platforms
+    username: str = ""
+    note: str = ""
+    created_at: str = field(default_factory=lambda: iso(utcnow()))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "SafetyRule":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
+
+
+@dataclass
+class UserProfile:
+    """Learned profile of a user we engaged with (interests, activity, sentiment)."""
+
+    id: str = field(default_factory=lambda: new_id("prof"))
+    platform: str = ""
+    username: str = ""
+    data: Dict[str, Any] = field(default_factory=dict)  # interests, activity_hours, sentiment…
+    first_seen: Optional[str] = None
+    last_seen: Optional[str] = None
+    updated_at: str = field(default_factory=lambda: iso(utcnow()))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "UserProfile":
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})  # type: ignore[attr-defined]
 
 

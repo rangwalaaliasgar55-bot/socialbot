@@ -53,7 +53,8 @@ function setView(view) {
   document.querySelectorAll("main > section").forEach((s) => s.classList.add("hidden"));
   $(`view-${view}`).classList.remove("hidden");
   $("view-title").textContent = { calendar: "Calendar", queue: "Queue", composer: "Composer",
-    accounts: "Accounts", bot: "Growth bot", analytics: "Analytics", events: "Activity" }[view];
+    accounts: "Accounts", bot: "Growth bot", agents: "Agents", analytics: "Analytics",
+    insights: "Insights", events: "Activity" }[view];
   render();
 }
 
@@ -79,7 +80,9 @@ async function render() {
   if (S.view === "composer") renderComposer();
   if (S.view === "accounts") renderAccounts();
   if (S.view === "bot") renderBot();
+  if (S.view === "agents") renderAgents();
   if (S.view === "analytics") renderAnalytics();
+  if (S.view === "insights") renderInsights();
   if (S.view === "events") renderEvents();
 }
 
@@ -534,6 +537,272 @@ async function renderAnalytics() {
     : `<tr><td colspan="7" class="empty">Nothing tracked yet</td></tr>`);
 }
 $("an-refresh").onclick = async () => { const r = await api("/api/analytics/refresh", { method: "POST" }); toast(`Updated ${r.updated} post metrics`); renderAnalytics(); };
+
+/* ------------------------------------------------------------------- agents */
+async function renderAgents() {
+  const [monitors, inboxRules, feeds] = await Promise.all([
+    api("/api/monitors"), api("/api/inbox"), api("/api/feeds")]);
+  S.monitors = monitors; S.inboxRules = inboxRules; S.feeds = feeds;
+
+  const mons = monitors.filter((m) => !m.competitors);
+  const cmps = monitors.filter((m) => m.competitors);
+  $("ag-mon-table").innerHTML = `<tr><th>Monitor</th><th>Platform</th><th>Action</th><th>Query</th><th>Last run</th><th></th></tr>` +
+    (mons.length ? mons.map((m) => `
+      <tr class="${m.enabled ? "" : "dim"}">
+        <td><strong>${esc(m.name)}</strong> ${m.dry_run ? '<span class="chip">dry-run</span>' : '<span class="chip s-published">live</span>'}</td>
+        <td>${platform(m.platform).icon} ${esc(platform(m.platform).display_name)}</td>
+        <td class="mono">${esc(m.action)}</td>
+        <td class="mono">${esc(m.query)}</td>
+        <td class="small muted">${m.last_run ? fmtWhen(m.last_run) : "never"}<br>${m.last_result ? `${m.last_result.acted} acted / ${m.last_result.found} found` : ""}</td>
+        <td style="white-space:nowrap">
+          <button class="btn small" onclick="runMon('${m.id}')">run</button>
+          <button class="btn danger small" onclick="delMon('${m.id}')">delete</button>
+        </td></tr>`).join("")
+    : `<tr><td colspan="6" class="empty">No monitors — watch a hashtag and let the agent engage for you</td></tr>`);
+
+  $("ag-cmp-table").innerHTML = `<tr><th>Watch</th><th>Platform</th><th>Competitors</th><th>Last run</th><th></th></tr>` +
+    (cmps.length ? cmps.map((c) => `
+      <tr class="${c.enabled ? "" : "dim"}">
+        <td><strong>${esc(c.name)}</strong> ${c.create_drafts ? '<span class="chip">auto-draft</span>' : ""}</td>
+        <td>${platform(c.platform).icon} ${esc(platform(c.platform).display_name)}</td>
+        <td class="mono">${esc(c.competitors.join(", "))}</td>
+        <td class="small muted">${c.last_run ? fmtWhen(c.last_run) : "never"}<br>${c.last_result ? `${c.last_result.recommendations} gaps / ${c.last_result.drafts_created} drafts` : ""}</td>
+        <td style="white-space:nowrap">
+          <button class="btn small" onclick="runCmp('${c.id}')">run</button>
+          <button class="btn danger small" onclick="delMon('${c.id}')">delete</button>
+        </td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">No competitor watches yet</td></tr>`);
+
+  $("ag-inb-table").innerHTML = `<tr><th>Responder</th><th>Platform</th><th>Intents</th><th>Last run</th><th></th></tr>` +
+    (inboxRules.length ? inboxRules.map((r) => `
+      <tr class="${r.enabled ? "" : "dim"}">
+        <td><strong>${esc(r.name)}</strong> ${r.auto_reply ? "" : '<span class="chip">no auto-reply</span>'}</td>
+        <td>${platform(r.platform).icon} ${esc(platform(r.platform).display_name)}</td>
+        <td class="mono">${esc(r.intents.join(", "))}</td>
+        <td class="small muted">${r.last_run ? fmtWhen(r.last_run) : "never"}<br>${r.last_result ? `${r.last_result.replied} replied / ${r.last_result.escalated} escalated` : ""}</td>
+        <td style="white-space:nowrap">
+          <button class="btn small" onclick="runInb('${r.id}')">run</button>
+          <button class="btn danger small" onclick="delInb('${r.id}')">delete</button>
+        </td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">No responders — auto-answer pricing/demo/thanks DMs</td></tr>`);
+
+  $("ag-feed-table").innerHTML = `<tr><th>Source</th><th>Kind</th><th>Target</th><th>Last run</th><th></th></tr>` +
+    (feeds.length ? feeds.map((f) => `
+      <tr class="${f.enabled ? "" : "dim"}">
+        <td><strong>${esc(f.name)}</strong> ${f.auto_draft ? '<span class="chip">auto-draft</span>' : ""}</td>
+        <td class="mono">${esc(f.kind)}</td>
+        <td class="mono">${esc(f.url || `${f.items.length} items`)}${f.target_platforms.length ? " → " + esc(f.target_platforms.join(",")) : ""}</td>
+        <td class="small muted">${f.last_run ? fmtWhen(f.last_run) : "never"}<br>${f.last_result ? `${f.last_result.new} new / ${f.last_result.drafts} drafts` : ""}</td>
+        <td style="white-space:nowrap">
+          <button class="btn small" onclick="pullFeed('${f.id}')">pull</button>
+          <button class="btn danger small" onclick="delFeed('${f.id}')">delete</button>
+        </td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">No content sources — add an RSS feed to auto-generate drafts</td></tr>`);
+}
+$("ag-run-all").onclick = async () => { try { const r = await api("/api/agents/run", { method: "POST" }); toast(`Agents done: ${r.mentions.length} mentions, ${r.inbox.length} inbox, ${r.competitors.length} competitors, ${r.trends.length} trends`); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
+$("ag-mon-new").onclick = () => monModal(null);
+$("ag-cmp-new").onclick = () => cmpModal(null);
+$("ag-inb-new").onclick = () => inbModal(null);
+$("ag-feed-new").onclick = () => feedModal(null);
+$("ag-feed-pull").onclick = async () => { for (const f of (S.feeds || [])) { await api(`/api/feeds/${f.id}/run`, { method: "POST" }); } toast("Feeds pulled"); renderAgents(); };
+window.runMon = async (id) => { try { const r = await api(`/api/monitors/mention/${id}/run`, { method: "POST" }); toast(r.ok ? `Found ${r.found}, acted ${r.acted}` : "Failed: " + r.error); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
+window.runCmp = async (id) => { try { const r = await api(`/api/monitors/competitor/${id}/run`, { method: "POST" }); toast(`Found ${r.recommendations} gaps, ${r.drafts_created} drafts`); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
+window.runInb = async (id) => { try { const r = await api(`/api/inbox/${id}/run`, { method: "POST" }); toast(`Replied ${r.replied}, escalated ${r.escalated}`); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
+window.pullFeed = async (id) => { try { const r = await api(`/api/feeds/${id}/run`, { method: "POST" }); toast(`${r.new} new item(s), ${r.drafts} draft(s)`); } catch (e) { toast("Error: " + e.message); } renderAgents(); };
+window.delMon = async (id) => { if (confirm("Delete this monitor/watch?")) { await api(`/api/monitors/${id}`, { method: "DELETE" }); renderAgents(); } };
+window.delInb = async (id) => { if (confirm("Delete this responder?")) { await api(`/api/inbox/${id}`, { method: "DELETE" }); renderAgents(); } };
+window.delFeed = async (id) => { if (confirm("Delete this content source?")) { await api(`/api/feeds/${id}`, { method: "DELETE" }); renderAgents(); } };
+
+function monModal(m) {
+  m = m || {};
+  $("modal").innerHTML = `
+    <h2><span>${m.id ? "Edit" : "New"} mention monitor</span><button class="close" onclick="closeModal()">✕</button></h2>
+    <div class="form-grid">
+      <div><label>Name</label><input id="mm-name" value="${esc(m.name || "")}" /></div>
+      <div><label>Platform</label><select id="mm-platform">${S.platforms.filter((p) => p.capabilities.includes("search")).map((p) => `<option value="${p.name}" ${p.name === m.platform ? "selected" : ""}>${p.icon} ${esc(p.display_name)}</option>`).join("")}</select></div>
+      <div><label>Query (hashtag / keyword / @mention)</label><input id="mm-query" value="${esc(m.query || "")}" /></div>
+      <div><label>Action</label><select id="mm-action">${["like", "comment", "repost", "quote", "follow"].map((a) => `<option value="${a}" ${a === m.action ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+      <div style="grid-column:1/-1"><label>Comment template ({topic})</label><input id="mm-comment" placeholder="Thoughtful take on {topic}!" value="${esc(m.comment_template || "")}" /></div>
+      <div><label>Max per run</label><input id="mm-run" type="number" value="${m.limit_per_run || 5}" /></div>
+      <div><label>Mode</label><select id="mm-mode"><option value="dry" ${m.dry_run !== false ? "selected" : ""}>dry-run</option><option value="live" ${m.dry_run === false ? "selected" : ""}>live</option></select></div>
+    </div>
+    <div class="actions"><button class="btn" onclick="saveMon('${m.id || ""}')">Save monitor</button></div>`;
+  $("modal-back").classList.add("show");
+}
+window.saveMon = async (id) => {
+  const body = {
+    name: $("mm-name").value || "monitor", platform: $("mm-platform").value,
+    query: $("mm-query").value, action: $("mm-action").value,
+    comment_template: $("mm-comment").value, limit_per_run: +$("mm-run").value || 5,
+    dry_run: $("mm-mode").value !== "live",
+  };
+  try { await api(`/api/monitors/mention${id ? "/" + id : ""}`, { method: "POST", body: JSON.stringify(body) }); closeModal(); toast("Monitor saved"); renderAgents(); }
+  catch (e) { toast("Error: " + e.message); }
+};
+
+function cmpModal(c) {
+  c = c || {};
+  $("modal").innerHTML = `
+    <h2><span>${c.id ? "Edit" : "New"} competitor watch</span><button class="close" onclick="closeModal()">✕</button></h2>
+    <div class="form-grid">
+      <div><label>Name</label><input id="cc-name" value="${esc(c.name || "")}" /></div>
+      <div><label>Platform</label><select id="cc-platform">${S.platforms.filter((p) => p.capabilities.includes("search")).map((p) => `<option value="${p.name}" ${p.name === c.platform ? "selected" : ""}>${p.icon} ${esc(p.display_name)}</option>`).join("")}</select></div>
+      <div style="grid-column:1/-1"><label>Competitor usernames (comma separated)</label><input id="cc-users" value="${esc((c.competitors || []).join(", "))}" /></div>
+      <div style="grid-column:1/-1"><label>Your interests (comma separated, optional)</label><input id="cc-int" value="${esc(c.interests || "")}" /></div>
+      <div><label>Auto-draft gap posts</label><select id="cc-draft"><option value="1" ${c.create_drafts !== false ? "selected" : ""}>yes</option><option value="0" ${c.create_drafts === false ? "selected" : ""}>no</option></select></div>
+    </div>
+    <div class="actions"><button class="btn" onclick="saveCmp('${c.id || ""}')">Save watch</button></div>`;
+  $("modal-back").classList.add("show");
+}
+window.saveCmp = async (id) => {
+  const body = {
+    name: $("cc-name").value || "watch", platform: $("cc-platform").value,
+    competitors: $("cc-users").value.split(",").map((s) => s.trim()).filter(Boolean),
+    interests: $("cc-int").value, create_drafts: $("cc-draft").value === "1",
+  };
+  try { await api(`/api/monitors/competitor${id ? "/" + id : ""}`, { method: "POST", body: JSON.stringify(body) }); closeModal(); toast("Watch saved"); renderAgents(); }
+  catch (e) { toast("Error: " + e.message); }
+};
+
+function inbModal(r) {
+  r = r || {};
+  $("modal").innerHTML = `
+    <h2><span>${r.id ? "Edit" : "New"} inbox responder</span><button class="close" onclick="closeModal()">✕</button></h2>
+    <div class="form-grid">
+      <div><label>Name</label><input id="ib-name" value="${esc(r.name || "")}" /></div>
+      <div><label>Platform</label><select id="ib-platform">${S.platforms.filter((p) => p.capabilities.includes("inbox")).map((p) => `<option value="${p.name}" ${p.name === r.platform ? "selected" : ""}>${p.icon} ${esc(p.display_name)}</option>`).join("")}</select></div>
+      <div style="grid-column:1/-1"><label>Intents to auto-reply (comma separated)</label><input id="ib-intents" value="${esc((r.intents || ["pricing", "demo", "thanks"]).join(", "))}" /></div>
+      <div><label>Auto-reply</label><select id="ib-reply"><option value="1" ${r.auto_reply !== false ? "selected" : ""}>yes</option><option value="0" ${r.auto_reply === false ? "selected" : ""}>no</option></select></div>
+      <div><label>Escalation webhook</label><input id="ib-hook" placeholder="https://… (complaints/unknowns)" value="${esc(r.escalate_webhook || "")}" /></div>
+    </div>
+    <div class="actions"><button class="btn" onclick="saveInb('${r.id || ""}')">Save responder</button></div>`;
+  $("modal-back").classList.add("show");
+}
+window.saveInb = async (id) => {
+  const body = {
+    name: $("ib-name").value || "responder", platform: $("ib-platform").value,
+    intents: $("ib-intents").value.split(",").map((s) => s.trim()).filter(Boolean),
+    auto_reply: $("ib-reply").value === "1", escalate_webhook: $("ib-hook").value || null,
+  };
+  try { await api(`/api/inbox${id ? "/" + id : ""}`, { method: "POST", body: JSON.stringify(body) }); closeModal(); toast("Responder saved"); renderAgents(); }
+  catch (e) { toast("Error: " + e.message); }
+};
+
+function feedModal(f) {
+  f = f || {};
+  $("modal").innerHTML = `
+    <h2><span>${f.id ? "Edit" : "New"} content source</span><button class="close" onclick="closeModal()">✕</button></h2>
+    <div class="form-grid">
+      <div><label>Name</label><input id="ff-name" value="${esc(f.name || "")}" /></div>
+      <div><label>Kind</label><select id="ff-kind"><option value="rss" ${f.kind !== "curated" ? "selected" : ""}>RSS feed</option><option value="curated" ${f.kind === "curated" ? "selected" : ""}>Curated</option></select></div>
+      <div style="grid-column:1/-1"><label>RSS URL</label><input id="ff-url" placeholder="https://blog.example.com/feed.xml" value="${esc(f.url || "")}" /></div>
+      <div style="grid-column:1/-1"><label>Default platforms for drafts (comma separated)</label><input id="ff-targets" placeholder="mastodon,telegram" value="${esc((f.target_platforms || []).join(", "))}" /></div>
+      <div><label>Drafts per pull</label><input id="ff-n" type="number" value="${f.n_drafts || 3}" /></div>
+      <div><label>Auto-create drafts</label><select id="ff-auto"><option value="1" ${f.auto_draft !== false ? "selected" : ""}>yes</option><option value="0" ${f.auto_draft === false ? "selected" : ""}>no</option></select></div>
+    </div>
+    <div class="actions"><button class="btn" onclick="saveFeed('${f.id || ""}')">Save source</button></div>`;
+  $("modal-back").classList.add("show");
+}
+window.saveFeed = async (id) => {
+  const body = {
+    name: $("ff-name").value || "feed", kind: $("ff-kind").value, url: $("ff-url").value.trim(),
+    target_platforms: $("ff-targets").value.split(",").map((s) => s.trim()).filter(Boolean),
+    n_drafts: +$("ff-n").value || 3, auto_draft: $("ff-auto").value === "1",
+  };
+  try { await api(`/api/feeds${id ? "/" + id : ""}`, { method: "POST", body: JSON.stringify(body) }); closeModal(); toast("Source saved"); renderAgents(); }
+  catch (e) { toast("Error: " + e.message); }
+};
+
+/* ---------------------------------------------------------------- insights */
+async function renderInsights() {
+  const [adapt, safety, trends, profiles] = await Promise.all([
+    api("/api/adapt/best-time"), api("/api/safety"), api("/api/trends?limit=20"),
+    api("/api/profiles?limit=20")]);
+  S.adapt = adapt; S.safety = safety; S.trends = trends; S.profiles = profiles;
+
+  $("in-windows").innerHTML = adapt.windows && adapt.windows.length
+    ? adapt.windows.map((w) => `<div class="card stat" style="margin:0">
+        <div class="num">${adapt.windows_human[adapt.windows.indexOf(w)] || ""}</div>
+        <div class="lbl">avg ${w.avg_engagement.toFixed(1)} · ${w.posts} posts</div></div>`).join("")
+    : `<div class="empty" style="grid-column:1/-1">Not enough history yet — post a few times and refresh metrics (Analytics tab)</div>`;
+
+  $("safety-platform").innerHTML = `<option value="">all platforms</option>` +
+    S.platforms.map((p) => `<option>${p.name}</option>`).join("");
+  $("in-safety").innerHTML = `<tr><th>Type</th><th>Platform</th><th>Username</th><th>Note</th><th></th></tr>` +
+    (safety.length ? safety.map((r) => `<tr>
+      <td><span class="chip ${r.list_type === "whitelist" ? "s-published" : "s-failed"}">${esc(r.list_type)}</span></td>
+      <td class="mono">${esc(r.platform || "all")}</td>
+      <td class="mono">@${esc(r.username)}</td>
+      <td class="muted small">${esc(r.note)}</td>
+      <td><button class="btn danger small" onclick="delSafety('${r.id}')">delete</button></td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">No rules — blacklist spammers, whitelist fans</td></tr>`);
+
+  $("in-trends-table").innerHTML = `<tr><th>Topic</th><th>Platform</th><th>Captured</th></tr>` +
+    (trends.length ? trends.map((t) => `<tr>
+      <td><strong>${esc(t.topic)}</strong>${t.source ? ` <span class="chip">${esc(t.source)}</span>` : ""}</td>
+      <td>${platform(t.platform).icon}</td>
+      <td class="muted small">${fmtWhen(t.captured_at)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">No trends captured yet — hit “Capture trends”</td></tr>`);
+
+  $("in-profiles").innerHTML = `<tr><th>User</th><th>Platform</th><th>Interests</th><th>Actions</th></tr>` +
+    (profiles.length ? profiles.map((p) => `<tr>
+      <td class="mono">@${esc(p.username)}</td>
+      <td>${platform(p.platform).icon}</td>
+      <td class="small">${esc((p.data.interests || []).slice(0, 4).join(", ")) || "—"}</td>
+      <td class="small">${esc(JSON.stringify(p.data.actions || {}))}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="empty">No profiles yet — run the bot or agents to build them</td></tr>`);
+}
+$("in-analyze").onclick = async () => {
+  const text = $("in-text").value.trim(); if (!text) return toast("Paste some text first");
+  try {
+    const r = await api("/api/analyze", { method: "POST", body: JSON.stringify({ text }) });
+    $("in-result").innerHTML = `<div class="prow ok"><strong>${esc(r.label)}</strong>
+      <span class="muted small">sentiment ${r.sentiment.toFixed(2)} · intent: ${esc(r.intent)} · topics: ${esc(r.topics.join(", ") || "—")}</span></div>
+      <div class="detail-text">${esc(r.suggested_reply)}</div>`;
+  } catch (e) { toast("Error: " + e.message); }
+};
+$("in-vibe").onclick = async () => {
+  const text = $("in-text").value.trim(); if (!text) return toast("Paste some text first");
+  try {
+    const r = await api("/api/adapt/vibe", { method: "POST", body: JSON.stringify({ text }) });
+    $("in-result").innerHTML = `<div class="prow ok"><strong>Style fit: ${r.fit}/100</strong>
+      <span class="muted small">compared against ${r.posts_compared} post(s)</span></div>
+      ${(r.suggestions || []).map((s) => `<div class="small">• ${esc(s)}</div>`).join("")}`;
+  } catch (e) { toast("Error: " + e.message); }
+};
+$("in-hashtags").onclick = async () => {
+  const text = $("in-text").value.trim(); if (!text) return toast("Write a topic first");
+  try {
+    const r = await api("/api/adapt/hashtags", { method: "POST", body: JSON.stringify({ text }) });
+    $("in-result").innerHTML = `<div class="prow ok"><strong>Recommended hashtags</strong></div>
+      <div class="small">${r.hashtags.map((h) => `<span class="chip">${esc(h)}</span>`).join(" ")}</div>`;
+  } catch (e) { toast("Error: " + e.message); }
+};
+$("in-report").onclick = async () => {
+  $("in-report").textContent = "… generating";
+  try {
+    const r = await api("/api/reports", { method: "POST" });
+    $("in-result").innerHTML = `<div class="prow ok"><strong>📈 ${esc(r.month)}</strong></div>
+      <div class="small">${r.posts_published} posts · ${r.engagement.likes} likes · ${r.engagement.comments} comments · ${r.follows_gained} follows · ${r.new_profiles_engaged} new users</div>`;
+    toast("Report generated");
+  } catch (e) { toast("Error: " + e.message); }
+  $("in-report").textContent = "📈 Generate monthly report";
+};
+$("in-trends").onclick = async () => {
+  try { const r = await api("/api/trends/capture", { method: "POST" }); toast("Trends captured"); renderInsights(); }
+  catch (e) { toast("Error: " + e.message); }
+};
+$("safety-add").onclick = async () => {
+  const username = $("safety-username").value.trim(); if (!username) return toast("Enter a username");
+  try {
+    await api("/api/safety", { method: "POST", body: JSON.stringify({
+      list_type: $("safety-type").value, platform: $("safety-platform").value,
+      username, note: $("safety-note").value }) });
+    $("safety-username").value = ""; $("safety-note").value = "";
+    toast("Safety rule added"); renderInsights();
+  } catch (e) { toast("Error: " + e.message); }
+};
+window.delSafety = async (id) => { await api(`/api/safety/${id}`, { method: "DELETE" }); renderInsights(); };
 
 /* ----------------------------------------------------------------- events */
 async function renderEvents() {

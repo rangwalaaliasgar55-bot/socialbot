@@ -1,14 +1,20 @@
 """Publishing engine: takes a Post, fans it out to platforms, records results,
-fires webhooks and handles retries/recurrence (Postiz-style pipeline)."""
+fires webhooks and handles retries/recurrence (Postiz-style pipeline).
+
+Supports per-platform text variants, automatic thread/carousel splitting on
+platforms that allow it, and best-time scheduling via the adaptive engine.
+"""
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from .http import HttpClient
 from .models import Post, PostStatus, PublishResult, iso, parse_dt, utcnow
 from .platforms import PlatformError, create_platform
 from .storage import Store
+from .threads import split_thread
 from .webhooks import fire_webhook
 
 log = logging.getLogger("socialbot.publisher")
@@ -29,6 +35,49 @@ class Publisher:
         return (account or {}).get("config", {}).get("signature")
 
     # -------------------------------------------------------------- publish
+    def _publish_to(self, platform, post: Post, text: str) -> Dict[str, Any]:
+        """Publish to a single platform, handling threads/carousels.
+
+        Returns the result dict (PublishResult fields plus ``parts`` for
+        multi-part threads).
+        """
+        if not post.thread or "thread" not in platform.capabilities:
+            clone = replace(post, text=text, thread=False, thread_parts=[])
+            result = platform.publish(clone)
+            return result.to_dict()
+
+        parts = post.thread_parts or split_thread(text, platform.max_length)
+        parts_results: List[Dict[str, Any]] = []
+        ok_parts = 0
+        for index, part in enumerate(parts):
+            media = post.media[index:index + 1] or post.media or []
+            clone = replace(post, text=part, media=media, thread=False, thread_parts=[])
+            try:
+                result = platform.publish(clone)
+                entry = result.to_dict()
+                if result.ok:
+                    ok_parts += 1
+            except PlatformError as exc:
+                entry = PublishResult(platform=platform.name, ok=False,
+                                      error=str(exc)).to_dict()
+            entry["part"] = index + 1
+            parts_results.append(entry)
+
+        ok = ok_parts == len(parts)
+        first_ok = next((r for r in parts_results if r.get("ok")), None)
+        if ok:
+            final = PublishResult(platform=platform.name, ok=True,
+                                  remote_id=parts_results[0].get("remote_id"),
+                                  url=parts_results[0].get("url"))
+        else:
+            errors = "; ".join(r.get("error") or "failed" for r in parts_results
+                               if not r.get("ok"))[:1000]
+            final = PublishResult(platform=platform.name, ok=False, error=errors)
+        out = final.to_dict()
+        out["parts"] = parts_results
+        out["first_ok"] = bool(first_ok)
+        return out
+
     def publish_now(self, post: Post, store: bool = True,
                     previous_results: Optional[Dict[str, Dict[str, Any]]] = None) -> Post:
         """Immediately publish *post* to every configured platform it targets.
@@ -51,12 +100,13 @@ class Publisher:
                 account = self.store.get_account(platform_name)
                 platform = self._platform_for(platform_name, account)
                 sig = (account or {}).get("config", {}).get("signature")
-                result = platform.publish(post)
-                results[platform_name] = result.to_dict()
-                if result.ok:
+                text = post.effective_text(platform_name, sig)
+                result = self._publish_to(platform, post, text)
+                results[platform_name] = result
+                if result.get("ok"):
                     succeeded.append(platform_name)
                     self.store.log_event("publish.ok",
-                                         f"published to {platform_name}: {result.url or result.remote_id}",
+                                         f"published to {platform_name}: {result.get('url') or result.get('remote_id')}",
                                          {"post_id": post.id, "platform": platform_name})
             except PlatformError as exc:
                 failed[platform_name] = str(exc)
@@ -166,7 +216,9 @@ class Publisher:
         clone = Post(
             text=post.text, media=post.media, platforms=post.platforms,
             status=PostStatus.SCHEDULED.value, scheduled_at=iso(nxt),
-            recurrence=post.recurrence, tag=post.tag, webhook_url=post.webhook_url)
+            recurrence=post.recurrence, tag=post.tag, webhook_url=post.webhook_url,
+            variants=post.variants, thread=post.thread, thread_parts=post.thread_parts,
+            best_time=post.best_time, origin=post.origin)
         self.store.save_post(clone)
         return clone
 

@@ -17,7 +17,9 @@
       <a data-view="composer">✍️ Composer</a>
       <a data-view="accounts">🔌 Accounts</a>
       <a data-view="bot">🤖 Growth bot</a>
+      <a data-view="agents">🧠 Agents</a>
       <a data-view="analytics">📊 Analytics</a>
+      <a data-view="insights">🔮 Insights</a>
       <a data-view="events">⚡ Activity</a>
       <a href="/docs" target="_blank">🧩 API docs</a>
     </nav>
@@ -134,6 +136,45 @@
       </div>
     </section>
 
+    <!-- AGENTS -->
+    <section id="view-agents" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Mention &amp; hashtag monitors</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost small" id="ag-run-all">▶ Run all agents</button>
+            <button class="btn small" id="ag-mon-new">＋ New monitor</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table id="ag-mon-table"></table></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Competitor watch</h2>
+          <button class="btn small" id="ag-cmp-new">＋ New watch</button>
+        </div>
+        <div style="overflow-x:auto"><table id="ag-cmp-table"></table></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Inbox responder</h2>
+          <button class="btn small" id="ag-inb-new">＋ New responder</button>
+        </div>
+        <div style="overflow-x:auto"><table id="ag-inb-table"></table></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Content sources (RSS / curated)</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost small" id="ag-feed-pull">↻ Pull all</button>
+            <button class="btn small" id="ag-feed-new">＋ New feed</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table id="ag-feed-table"></table></div>
+      </div>
+      <p class="muted small">Agents run silently on the scheduler interval (or when you hit “Run all”). Every action is logged in Activity and respects blacklist/whitelist + rate limits.</p>
+    </section>
+
     <!-- ANALYTICS -->
     <section id="view-analytics" class="hidden">
       <div class="card">
@@ -153,6 +194,54 @@
       <div class="card">
         <h2>Latest per-post metrics</h2>
         <div style="overflow-x:auto"><table id="an-table"></table></div>
+      </div>
+    </section>
+
+    <!-- INSIGHTS -->
+    <section id="view-insights" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Best times to post</h2>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost small" id="in-report">📈 Generate monthly report</button>
+          </div>
+        </div>
+        <div class="grid cols-4" id="in-windows"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Vibe check &amp; analysis</h2>
+        </div>
+        <textarea id="in-text" placeholder="Paste a draft (or any text) — get sentiment, intent, topics, a suggested reply and a style-fit score…" style="min-height:90px"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn small" id="in-analyze">🔬 Analyze</button>
+          <button class="btn ghost small" id="in-vibe">🎨 Vibe fit</button>
+          <button class="btn ghost small" id="in-hashtags"># Adaptive hashtags</button>
+          <span class="muted small" style="align-self:center" id="in-msg"></span>
+        </div>
+        <div id="in-result" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h2>Safety — blacklist &amp; whitelist</h2>
+        <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+          <select id="safety-type"><option value="blacklist">blacklist</option><option value="whitelist">whitelist</option></select>
+          <select id="safety-platform"><option value="">all platforms</option></select>
+          <input id="safety-username" placeholder="@username" style="width:180px" />
+          <input id="safety-note" placeholder="why (optional)" style="width:200px" />
+          <button class="btn small" id="safety-add">＋ Add</button>
+        </div>
+        <div style="overflow-x:auto"><table id="in-safety"></table></div>
+      </div>
+      <div class="card">
+        <h2>Trends</h2>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="btn ghost small" id="in-trends">↻ Capture trends</button>
+        </div>
+        <div style="overflow-x:auto"><table id="in-trends-table"></table></div>
+      </div>
+      <div class="card">
+        <h2>User profiles</h2>
+        <div style="overflow-x:auto"><table id="in-profiles"></table></div>
       </div>
     </section>
 
