@@ -62,11 +62,14 @@ def test_retry_failed_platforms(store):
         publisher.publish_now(post)
         assert post.status == PostStatus.PARTIAL.value
 
-        # telegram "fixed": retry only touches the failed platform
+        # telegram "fixed": retry only touches the failed platform and keeps
+        # the earlier mock success (partial state is preserved)
         call.side_effect = None
         post = publisher.retry(post.id)
         assert post.status == PostStatus.PUBLISHED.value
-        assert list(post.results.keys()) == ["telegram"]
+        assert set(post.results.keys()) == {"mock", "telegram"}
+        assert post.results["mock"]["ok"] is True
+        assert post.results["telegram"]["ok"] is True
 
 
 def test_recurrence_interval_clones_next(store):
@@ -122,3 +125,31 @@ def test_webhook_no_url_is_noop():
     finally:
         if saved:
             os.environ["SOCIALBOT_WEBHOOK_URL"] = saved
+
+
+def test_process_failed_skips_fresh_and_exhausted(store):
+    """Auto-retry must respect backoff window and max_attempts."""
+    from datetime import timedelta
+
+    publisher = _setup(store)
+    fresh = Post(text="fresh", platforms=["telegram"], status=PostStatus.FAILED.value,
+                 results={"telegram": {"ok": False, "error": "x"}},
+                 attempts=1, max_attempts=3, published_at=iso(utcnow()))
+    stale = Post(text="stale", platforms=["telegram"], status=PostStatus.FAILED.value,
+                 results={"telegram": {"ok": False, "error": "x"}},
+                 attempts=1, max_attempts=3,
+                 published_at=iso(utcnow() - timedelta(minutes=10)))
+    spent = Post(text="spent", platforms=["telegram"], status=PostStatus.FAILED.value,
+                 results={"telegram": {"ok": False, "error": "x"}},
+                 attempts=3, max_attempts=3, published_at=iso(utcnow() - timedelta(hours=5)))
+    for p in (fresh, stale, spent):
+        store.save_post(p)
+
+    with patch("socialbot.platforms.telegram.Telegram._call") as call:
+        call.side_effect = Exception("still down")
+        retried = publisher.process_failed()
+
+    assert stale.id in {p.id for p in retried}
+    assert fresh.id not in {p.id for p in retried}   # backoff window not elapsed
+    assert spent.id not in {p.id for p in retried}   # attempts exhausted
+    assert store.get_post(stale.id).attempts == 2

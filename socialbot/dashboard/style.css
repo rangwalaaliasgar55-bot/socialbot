@@ -126,3 +126,15 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 .toast.show { display: block; }
 .hidden { display: none !important; }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+
+/* post detail modal */
+tr.clickable { cursor: pointer; }
+.detail-text { white-space: pre-wrap; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; margin: 10px 0; font-size: 14px; }
+.detail-meta { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.prow { border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; margin-bottom: 6px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.prow.err { border-color: rgba(239,68,68,.4); }
+.prow.ok { border-color: rgba(34,197,94,.35); }
+tr.dim td { opacity: .45; }
+.modal h3 { font-size: 13px; margin-bottom: 6px; }

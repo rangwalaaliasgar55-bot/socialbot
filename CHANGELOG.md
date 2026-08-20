@@ -1,6 +1,37 @@
 # Changelog
 
+## 1.2.0 — 2026-08-20
+
+Growth & intelligence release — "agents + self-learning" edition.
+
+- **Real posting**: per-platform text variants (`--variant`), automatic
+  thread/carousel splitting (`--thread`), best-time-to-post scheduling
+  (`--best-time`, from your own engagement history)
+- **Content sources**: RSS/Atom ingestion (stdlib XML, no new deps) and
+  curated lists → auto-generated draft posts (`socialbot feeds`)
+- **Background agents** (`socialbot monitor / inbox / trends`):
+  mention & hashtag monitor (dedupe, dry-run, caps), trend analyzer with
+  auto-drafts, inbox responder (intent detection + webhook escalation),
+  competitor watch with content-gap drafts
+- **Intelligence**: offline sentiment analysis, intent detection,
+  context-aware replies, topic extraction, post "vibe" metrics
+  (`socialbot analyze`)
+- **Safety**: persistent token-bucket rate limiter + blacklist/whitelist
+  enforced across the bot and all agents (`socialbot safety`)
+- **User profiling**: learned interest/activity profiles + similar-user
+  targeting for smarter growth (`socialbot profiles`)
+- **Self-learning loop**: best-time windows, vibe-fit scoring, adaptive
+  hashtags (`socialbot best-time`, Insights tab)
+- **Monthly growth report**: posts/engagement/follows/agent activity,
+  delivered to webhooks (`socialbot report`)
+- **Scheduler**: new jobs for agents, feeds, trends & monthly reports
+- **Dashboard**: new 🧠 Agents and 🔮 Insights views
+- **Windows fix**: `--help` no longer crashes on cp1252 consoles
+- 90 tests (was 66)
+
 ## 1.1.0 — 2026-08-19
+
+Parallel lines merged: platform expansion + autonomy hardening.
 
 - **New platforms**: YouTube, TikTok, Nostr, Lemmy (17 total).
   - **YouTube** — Data API v3 resumable video upload, delete, metrics; OAuth access/refresh tokens.
@@ -8,7 +39,25 @@
   - **Nostr** — NIP-01 kind-1 notes to multiple relays; hex/nsec keys; optional coincurve + websocket-client.
   - **Lemmy** — Create posts, vote, comment, search, metrics on any instance via JWT or login.
 - Docs: credential setup for the four new networks in `docs/ENVIRONMENT.md`.
-- Tests: registry coverage for the new platforms.
+- **Autonomous operation**: scheduler auto-retries failed posts with
+  exponential backoff (2m→4m→8m…max 1h, up to max_attempts); optional
+  scheduled bot rules via `SOCIALBOT_BOT_INTERVAL`
+- **API**: `DELETE /api/posts/:id` now really deletes any post; new
+  `PATCH /api/posts/:id` (edit drafts/scheduled), `POST /api/posts/:id/remote`
+  (delete on remote platforms), `PATCH /api/bot/rules/:id`, optional
+  `SOCIALBOT_API_TOKEN` Bearer auth for `/api` + docs
+- **Publisher**: retries now preserve earlier per-platform successes
+  (no more partial-state loss)
+- **Bot engine**: per-hour cap now counts *all* live actions in the last
+  hour (was: latest run only — repeated runs could exceed the cap)
+- **Platform fixes**: Telegram local-file uploads keep chat_id/caption;
+  Slack image blocks use the correct schema; Bluesky always publishes with
+  the DID repo after login; Mastodon cleanup
+- **Dashboard**: clickable post detail modal (results, errors, edit,
+  remote delete), composer draft autosave + Ctrl+Enter, calendar "Today",
+  rule edit/pause/resume, account disconnect, API-token prompt, live
+  queued-post count
+- 66 tests (was 58)
 
 ## 1.0.1 — 2026-08-19
 

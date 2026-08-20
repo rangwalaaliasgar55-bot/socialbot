@@ -50,10 +50,15 @@ class Bluesky(Platform):
         self._session = data
         return {"Authorization": f"Bearer {self._session['accessJwt']}"}
 
+    def _repo(self) -> str:
+        """Authenticated user's DID — ensures a session exists before building bodies."""
+        self._auth()
+        return self._session["did"] if self._session else self.setting("identifier")
+
     def verify(self) -> tuple:
         try:
-            auth = self._auth()
-            return True, f"logged in as {self._session.get('handle', '?')}" if self._session else (True, "ok")
+            self._auth()
+            return True, f"logged in as {self._session.get('handle', '?')}"
         except Exception as exc:
             return False, str(exc)
 
@@ -100,7 +105,7 @@ class Bluesky(Platform):
             record["embed"] = {"$type": "app.bsky.embed.images", "images": images}
         created = self.http.post_json(
             f"{self._api()}/com.atproto.repo.createRecord",
-            json={"repo": self._session["did"] if self._session else self.setting("identifier"),
+            json={"repo": self._repo(),
                   "collection": "app.bsky.feed.post", "record": record},
             headers=self._auth())
         uri = created.get("uri", "")
@@ -114,7 +119,7 @@ class Bluesky(Platform):
         rkey = uri.rsplit("/", 1)[-1]
         self.http.post_json(
             f"{self._api()}/com.atproto.repo.deleteRecord",
-            json={"repo": self._session["did"] if self._session else self.setting("identifier"),
+            json={"repo": self._repo(),
                   "collection": "app.bsky.feed.post", "rkey": rkey},
             headers=self._auth())
         return True
@@ -147,7 +152,7 @@ class Bluesky(Platform):
     def _create_record(self, collection: str, record: Dict[str, Any]) -> Dict[str, Any]:
         return self.http.post_json(
             f"{self._api()}/com.atproto.repo.createRecord",
-            json={"repo": self._session["did"] if self._session else self.setting("identifier"),
+            json={"repo": self._repo(),
                   "collection": collection, "record": record},
             headers=self._auth())
 

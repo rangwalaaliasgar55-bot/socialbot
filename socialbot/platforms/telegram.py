@@ -29,8 +29,9 @@ class Telegram(Platform):
 
     def _call(self, method: str, payload: Dict[str, Any], files=None) -> Dict[str, Any]:
         token = self.require("bot_token")
-        resp = self.http.session.post(f"{API}/bot{token}/{method}", json=None if files else payload,
-                                      data=None if files else None, files=files,
+        resp = self.http.session.post(f"{API}/bot{token}/{method}",
+                                      json=payload if files is None else None,
+                                      data=payload if files else None, files=files,
                                       timeout=self.http.timeout)
         body = resp.json() if resp.content else {}
         if not resp.ok or not body.get("ok"):

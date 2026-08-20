@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "socialbot"
-version = "1.1.0"
+version = "1.2.0"
 description = "All-in-one open-source social media scheduling & automation bot — post, schedule, auto-engage, and analyze 13+ platforms from one place."
 readme = "README.md"
 requires-python = ">=3.9"

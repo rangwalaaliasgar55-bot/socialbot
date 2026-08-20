@@ -108,6 +108,19 @@ class Platform(ABC):
     def repost(self, item: Dict[str, Any]) -> bool:
         raise PlatformError(f"{self.display_name} does not support repost")
 
+    def quote(self, item: Dict[str, Any], text: str = "") -> bool:
+        raise PlatformError(f"{self.display_name} does not support quote")
+
+    # ------------------------------------------------------- agents / inbox
+    def get_trending(self, limit: int = 10) -> List[Dict[str, Any]]:
+        raise PlatformError(f"{self.display_name} does not support trending")
+
+    def list_messages(self, limit: int = 10) -> List[Dict[str, Any]]:
+        raise PlatformError(f"{self.display_name} does not support inbox")
+
+    def reply_message(self, message: Dict[str, Any], text: str) -> bool:
+        raise PlatformError(f"{self.display_name} does not support inbox")
+
 
 # ------------------------------------------------------------------ registry
 def register(cls: Type[Platform]) -> Type[Platform]:

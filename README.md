@@ -86,11 +86,25 @@ socialbot dashboard            # http://localhost:8000
 
 - **📅 Calendar** — month grid with color-coded posts; click a day to schedule
 - **✍️ Composer** — pick platforms (live character limits), media, tags, signature, recurrence, webhook, and **✨ AI drafts**
-- **📮 Queue** — every post with per-platform results, retry/cancel/publish-now
-- **🔌 Accounts** — connect/verify credentials with auto-generated forms
-- **🤖 Growth bot** — create rules (`comment on #python posts on Bluesky`), run dry-run or live
+- **📮 Queue** — every post with per-platform results; click any post for full detail (results, errors, edit, remote delete)
+- **🔌 Accounts** — connect/verify credentials with auto-generated forms; disconnect with one click
+- **🤖 Growth bot** — create/edit/pause rules (`comment on #python posts on Bluesky`), run dry-run or live
 - **📊 Analytics** — totals, engagement bars per platform, CSV export
 - **⚡ Activity** — full event log
+
+## ⚙️ Autonomous operation
+
+The scheduler is embedded in the dashboard and CLI worker — it runs by itself:
+
+- publishes due posts every **20s** (catches up missed posts after downtime)
+- **auto-retries failed posts** with exponential backoff (2m → 4m → 8m … max 1h, up to `max_attempts`=3)
+- refreshes engagement metrics every 6h
+- optionally runs your enabled bot rules on a schedule: set `SOCIALBOT_BOT_INTERVAL=30` (minutes) — each rule still respects its dry-run/live mode and its own caps
+
+```bash
+socialbot run          # standalone worker
+socialbot dashboard    # dashboard + worker in one process
+```
 
 ## 🤖 Growth bot (auto like / follow / comment)
 
@@ -169,11 +183,12 @@ SocialBot is configured by **accounts in the database** plus a few environment v
 | Variable | Purpose |
 |---|---|
 | `SOCIALBOT_DB` | SQLite path (default `./socialbot.db`) |
+| `SOCIALBOT_API_TOKEN` | protect the API & dashboard with `Bearer` auth |
+| `SOCIALBOT_BOT_INTERVAL` | run bot rules on a schedule (minutes, 0 = off) |
 | `SOCIALBOT_WEBHOOK_URL` | global publish webhook |
 | `SOCIALBOT_AI_API_KEY` | enable LLM drafts (any OpenAI-compatible API) |
 | `SOCIALBOT_AI_BASE_URL` | e.g. `https://api.groq.com/openai/v1`, `http://localhost:11434/v1` |
 | `SOCIALBOT_AI_MODEL` | e.g. `llama-3.1-8b-instant` |
-| `SOCIALBOT_SECRET_KEY` | (optional) reserved for multi-user auth |
 
 Platform credentials can also be provided as `PLATFORM_FIELD` env vars (e.g. `TELEGRAM_BOT_TOKEN`, `MASTODON_INSTANCE`) — see [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md).
 
@@ -181,7 +196,7 @@ Platform credentials can also be provided as `PLATFORM_FIELD` env vars (e.g. `TE
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 58 tests, no network needed
+pytest                     # 66 tests, no network needed
 ```
 
 > **CI**: the GitHub Actions workflow ships at [`docs/ci-workflow.yml`](docs/ci-workflow.yml)
