@@ -35,6 +35,8 @@ class Platform(ABC):
     max_length: Optional[int] = None   # text limit; None = unlimited
     site: str = ""
     docs_url: str = ""
+    guide: List[str] = []              # step-by-step "how to connect" instructions
+    oauth: Optional[Dict[str, Any]] = None  # one-click OAuth metadata (see socialbot/oauth.py)
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, http: Optional[HttpClient] = None):
         self.config: Dict[str, Any] = dict(config or {})
@@ -153,6 +155,8 @@ def platform_meta() -> List[Dict[str, Any]]:
             "max_length": cls.max_length,
             "site": cls.site,
             "docs_url": cls.docs_url,
+            "guide": cls.guide,
+            "oauth": cls.oauth,
         })
     return out
 

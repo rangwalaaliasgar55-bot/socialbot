@@ -20,11 +20,36 @@ class LinkedIn(Platform):
     site = "https://linkedin.com"
     docs_url = "https://learn.microsoft.com/en-us/linkedin/marketing/"
     auth_fields = [
+        {"key": "client_id", "label": "OAuth client ID", "required": False, "secret": True,
+         "help": "From the app's Auth tab — needed for Connect with LinkedIn"},
+        {"key": "client_secret", "label": "OAuth client secret", "required": False, "secret": True,
+         "help": "From the app's Auth tab — needed for Connect with LinkedIn"},
         {"key": "access_token", "label": "Access token", "required": True, "secret": True,
          "help": "w_member_social scope (Sign In with LinkedIn using OpenID Connect)"},
         {"key": "member_id", "label": "Member URN id", "required": True, "secret": False,
          "help": "e.g. 4t6Fv8rXkQ (from the 'sub' claim of your id token)"},
     ]
+    guide = [
+        "Go to developer.linkedin.com → 'My Apps' → 'Create app' (name it anything).",
+        "On the 'Products' tab add the product 'Sign In with LinkedIn using OpenID Connect'.",
+        "On the 'Auth' tab add the redirect URL: "
+        "http://localhost:8000/api/accounts/linkedin/oauth/callback "
+        "(use your dashboard's port if it differs).",
+        "Copy the Client ID and Client Secret from the 'Auth' tab.",
+        "Easiest path: paste both into the fields and click 'Connect with LinkedIn' — "
+        "SocialBot signs you in, exchanges the code and reads your member id automatically.",
+        "Or generate a token manually with scope w_member_social and paste it with your "
+        "member id (the 'sub' value from your OpenID Connect id token).",
+    ]
+    oauth = {
+        "provider": "LinkedIn",
+        "auth_url": "https://www.linkedin.com/oauth/v2/authorization",
+        "token_url": "https://www.linkedin.com/oauth/v2/accessToken",
+        "scope": "openid profile w_member_social",
+        "client_id_key": "client_id",
+        "client_secret_key": "client_secret",
+        "from_id_token": ["member_id"],
+    }
 
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.require('access_token')}",

@@ -53,6 +53,10 @@ class MockPlatform(Platform):
     auth_fields = [
         {"key": "username", "label": "Mock username", "required": False, "secret": False},
     ]
+    guide = [
+        "The Mock platform is a simulator — no credentials needed.",
+        "Click Save (or add an account via the CLI) and every feature works end to end.",
+    ]
 
     def publish(self, post: Post) -> PublishResult:
         n = next(_counter)

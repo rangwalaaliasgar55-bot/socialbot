@@ -32,17 +32,40 @@ class YouTube(Platform):
     site = "https://youtube.com"
     docs_url = "https://developers.google.com/youtube/v3/docs/videos/insert"
     auth_fields = [
+        {"key": "client_id", "label": "OAuth client ID", "required": False, "secret": True,
+         "help": "Google Cloud OAuth client — needed for Connect with Google"},
+        {"key": "client_secret", "label": "OAuth client secret", "required": False, "secret": True,
+         "help": "Google Cloud OAuth client — needed for Connect with Google"},
         {"key": "access_token", "label": "OAuth access token", "required": True, "secret": True,
          "help": "Google OAuth token with youtube.upload scope (or full youtube scope)"},
         {"key": "refresh_token", "label": "Refresh token (optional)", "required": False, "secret": True,
          "help": "Used to refresh the access token when it expires"},
-        {"key": "client_id", "label": "OAuth client ID (for refresh)", "required": False, "secret": True},
-        {"key": "client_secret", "label": "OAuth client secret (for refresh)", "required": False, "secret": True},
         {"key": "privacy", "label": "Default privacy (public|unlisted|private)", "required": False,
          "secret": False, "help": "Defaults to unlisted"},
         {"key": "category_id", "label": "Category ID", "required": False, "secret": False,
          "help": "e.g. 22 = People & Blogs (default)"},
     ]
+    guide = [
+        "Go to console.cloud.google.com and create (or pick) a project.",
+        "In 'APIs & Services' → 'Library', search for 'YouTube Data API v3' and ENABLE it.",
+        "Go to 'APIs & Services' → 'Credentials' → 'Create credentials' → 'OAuth client ID'.",
+        "Choose 'Web application' (or 'Desktop app' for the terminal flow) and add the "
+        "redirect URL: http://localhost:8000/api/accounts/youtube/oauth/callback "
+        "(use your dashboard's port if it differs).",
+        "Copy the Client ID and Client Secret.",
+        "Click 'Connect with Google' — you sign in with Google, and SocialBot stores "
+        "the access + refresh tokens (expired tokens refresh automatically).",
+        "Optional: set a default privacy (unlisted is default) and a category id.",
+    ]
+    oauth = {
+        "provider": "Google",
+        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "scope": "https://www.googleapis.com/auth/youtube.upload "
+                 "https://www.googleapis.com/auth/youtube.readonly",
+        "client_id_key": "client_id",
+        "client_secret_key": "client_secret",
+    }
 
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.require('access_token')}"}

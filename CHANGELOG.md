@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.0 — 2026-08-20
+
+One-click OAuth connect + step-by-step connection guides — connecting a network
+now feels like signing in with Google.
+
+- **One-click OAuth** (`socialbot/oauth.py`): new `socialbot connect <platform>`
+  command and `POST/GET /api/accounts/{platform}/oauth/start|callback` endpoints
+  for LinkedIn, X and YouTube. Local callback server (CLI) or the dashboard's own
+  URL (web) receives the redirect, exchanges the code, stores access/refresh
+  tokens and reads the LinkedIn member id from the id token automatically.
+- **In-dashboard guides**: every platform now ships a "How to connect — step by
+  step" guide; the Accounts modal renders it expandable, plus a
+  **Connect with Google / LinkedIn / X** button with a popup + auto-refresh.
+- **Dashboard**: OAuth popup notifies the main page via `postMessage` and closes
+  itself; accounts list refreshes the instant you authorize.
+- **CLI**: `socialbot platforms` now hints at the one-click flow for OAuth
+  platforms.
+- 130 tests (was 116 — 14 new OAuth tests)
+
 ## 1.4.1 — 2026-08-20
 
 Focused build: SocialBot now ships with exactly the platforms you need.

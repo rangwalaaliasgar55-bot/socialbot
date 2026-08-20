@@ -114,6 +114,16 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 .acct-card .iconwrap { width: 40px; height: 40px; border-radius: 10px; background: var(--bg3);
   display: grid; place-items: center; }
 
+/* connection guide + oauth */
+details.guide { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 10px; }
+details.guide summary { cursor: pointer; font-weight: 600; }
+details.guide ol { margin: 8px 0 2px; padding-left: 20px; }
+details.guide li { margin: 4px 0; font-size: 13px; line-height: 1.5; }
+.btn.oauth { background: #1d4ed8; color: #fff; width: 100%; justify-content: center;
+  margin: 4px 0 10px; }
+.btn.oauth:hover { background: #1e40af; }
+
 /* bars */
 .bars .bar-row { display: grid; grid-template-columns: 110px 1fr 60px; gap: 10px; align-items: center;
   margin-bottom: 8px; font-size: 12px; }

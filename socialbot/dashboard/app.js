@@ -373,9 +373,19 @@ window.acctModal = (name) => {
   const p = platform(name);
   const acc = S.accounts.find((a) => a.platform === name) || { config: {}, label: "" };
   const connected = !!acc.platform;
+  const guide = p.guide && p.guide.length
+    ? `<details class="guide"><summary>📖 How to connect — step by step</summary>
+       <ol>${p.guide.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></details>`
+    : "";
+  const oauthBtn = p.oauth
+    ? `<button class="btn oauth" onclick="oauthConnect('${name}')">🔑 Connect with ${esc(p.oauth.provider)}</button>
+       <p class="muted small">Paste your OAuth ${esc(p.oauth.client_id_key || "client_id")}${p.oauth.client_secret_key ? " and " + esc(p.oauth.client_secret_key) : ""} below, then click — you'll authorize in a popup, no tokens to copy.</p>`
+    : "";
   $("modal").innerHTML = `
     <h2><span>${p.icon} ${esc(p.display_name)}</span><button class="close" onclick="closeModal()">✕</button></h2>
-    <p class="muted small" style="margin:6px 0 4px">${p.auth_fields.length ? "Enter credentials (stored locally in your DB):" : "No credentials needed for this platform."}</p>
+    ${guide}
+    ${oauthBtn}
+    <p class="muted small" style="margin:6px 0 4px">${p.auth_fields.length ? "Credentials (stored locally in your DB):" : "No credentials needed for this platform."}</p>
     ${p.auth_fields.map((f) => `
       <div class="field"><label>${esc(f.label)}${f.required ? " *" : ""}${f.help ? ` — ${esc(f.help)}` : ""}</label>
       <input id="af-${esc(f.key)}" type="${f.secret ? "password" : "text"}" value="${esc(String(acc.config[f.key] ?? ""))}" /></div>`).join("")}
@@ -390,6 +400,26 @@ window.acctModal = (name) => {
     <div class="small muted" id="af-msg" style="margin-top:8px"></div>`;
   $("modal-back").classList.add("show");
 };
+window.oauthConnect = async (name) => {
+  const p = platform(name);
+  const o = p.oauth;
+  const cid = $(`af-${o.client_id_key || "client_id"}`)?.value.trim() || "";
+  const sec = $(`af-${o.client_secret_key || "client_secret"}`)?.value.trim() || "";
+  if (!cid) { $("af-msg").textContent = "❌ Paste your OAuth client id first (see the guide above)."; return; }
+  let r;
+  try {
+    r = await api(`/api/accounts/${name}/oauth/start`, { method: "POST",
+      body: JSON.stringify({ client_id: cid, client_secret: sec }) });
+  } catch (e) { $("af-msg").textContent = "❌ " + e.message; return; }
+  window.open(r.auth_url, "socialbot-oauth", "width=640,height=720");
+  $("af-msg").textContent = "⏳ Authorize in the popup — this page refreshes automatically…";
+};
+window.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "socialbot-oauth-done") {
+    toast(`${platform(e.data.platform)?.display_name || e.data.platform} connected`);
+    render();
+  }
+});
 window.closeModal = () => $("modal-back").classList.remove("show");
 $("modal-back").addEventListener("click", (e) => { if (e.target === $("modal-back")) closeModal(); });
 

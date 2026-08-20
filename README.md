@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![version](https://img.shields.io/badge/version-1.4.1-2b7a78?style=for-the-badge)]()
+[![version](https://img.shields.io/badge/version-1.5.0-2b7a78?style=for-the-badge)]()
 [![tests](https://img.shields.io/badge/tests-116%20passing-2ea043?style=for-the-badge)](https://github.com/rangwalaaliasgar55-bot/socialbot/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -65,7 +65,12 @@ socialbot run                                                                   
 ### Connecting a real platform
 
 ```bash
-# interactive — prompts for the credentials it needs
+# ONE-CLICK OAuth — like "sign in with Google" (LinkedIn, X, YouTube)
+socialbot connect youtube          # opens your browser, you authorize, tokens saved
+socialbot connect twitter
+socialbot connect linkedin
+
+# manual — interactive prompts for the credentials it needs
 socialbot accounts add telegram
 
 # or non-interactive
@@ -74,6 +79,10 @@ socialbot accounts add telegram --set bot_token=123:ABC --set chat_id=-100123456
 # check what's connected
 socialbot accounts list
 ```
+
+The dashboard's **Accounts** page has the same one-click buttons — open a platform,
+open the **"How to connect — step by step"** guide, paste your OAuth client id/secret,
+and click **Connect with Google / LinkedIn / X**.
 
 Every credential is stored **locally in your own database** — nothing leaves your machine. Each platform card in the dashboard explains exactly where to get its token (also see [`ENVIRONMENT.md`](docs/ENVIRONMENT.md)).
 
@@ -162,6 +171,7 @@ Outgoing webhooks: set a `webhook_url` on a post (or `SOCIALBOT_WEBHOOK_URL` glo
 | `socialbot platforms` | list supported networks & capabilities |
 | `socialbot accounts add PLATFORM [--set k=v…]` | connect an account |
 | `socialbot accounts list \| remove PLATFORM` | manage accounts |
+| `socialbot connect PLATFORM [--port 8765]` | one-click OAuth connect (LinkedIn, X, YouTube) |
 | `socialbot post TEXT --to p1,p2 [--media urls] [--at "in 2h"] [--repeat daily]` | post now or schedule |
 | `socialbot schedule` | show the queue |
 | `socialbot cancel POST_ID` | cancel a scheduled post |
@@ -201,7 +211,7 @@ Platform credentials can also be provided as `PLATFORM_FIELD` env vars (e.g. `TE
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 116 tests, no network needed
+pytest                     # 130 tests, no network needed
 ```
 
 ## 🤝 Contributing

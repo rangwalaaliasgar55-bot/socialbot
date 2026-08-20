@@ -26,6 +26,16 @@ class Telegram(Platform):
         {"key": "chat_id", "label": "Chat / channel ID", "required": True, "secret": False,
          "help": "e.g. -1001234567890 for a channel or your numeric user id"},
     ]
+    guide = [
+        "Open Telegram and start a chat with @BotFather (the official bot that creates bots).",
+        "Send the command /newbot and follow the prompts — pick a display name and a username ending in 'bot'.",
+        "BotFather replies with your bot token (looks like 123456789:AAH...). Copy it.",
+        "If you want posts to land in a channel: add your bot to that channel as an ADMIN.",
+        "Send any message to your bot (or channel), then open "
+        "https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates in your browser.",
+        "Copy the numeric chat id from \"chat\":{\"id\": ...} — channels have ids like -1001234567890.",
+        "Paste the bot token and chat id here, then click Save.",
+    ]
 
     def _call(self, method: str, payload: Dict[str, Any], files=None) -> Dict[str, Any]:
         token = self.require("bot_token")

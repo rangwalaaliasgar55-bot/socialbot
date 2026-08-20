@@ -13,9 +13,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,8 @@ from ..http import HttpClient
 from ..models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
                       Post, PostStatus, dumps, iso, parse_dt, utcnow)
 from ..monitoring import get_monitoring
+from ..oauth import (PENDING_STATES, STATE_TTL, build_auth_url, exchange_code,
+                     new_state)
 from ..platforms import PlatformError, platform_meta, platform_names, create_platform
 from ..publisher import Publisher
 from ..scheduler import Scheduler
@@ -41,6 +43,30 @@ DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 SECRET_KEYS = {field["key"] for meta in platform_meta()
                for field in meta["auth_fields"] if field.get("secret")}
 API_TOKEN = os.environ.get("SOCIALBOT_API_TOKEN", "").strip()
+
+
+def platform_meta_by_name(name: str) -> Optional[dict]:
+    try:
+        return next((m for m in platform_meta() if m["name"] == name), None)
+    except Exception:
+        return None
+
+
+def _oauth_page(title: str, message: str, platform: str = "") -> str:
+    """Minimal page shown after the OAuth callback (rendered in the popup)."""
+    notify = (f"<script>try{{if(window.opener)window.opener.postMessage("
+              f"{{type:'socialbot-oauth-done',platform:'{platform}'}},location.origin);"
+              f"}}catch(e){{}}</script>") if platform else ""
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SocialBot</title></head>
+<body style="font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;
+display:grid;place-items:center;min-height:100vh;margin:0">
+<div style="text-align:center;max-width:440px;padding:24px">
+<h2>{title}</h2><p>{message}</p>
+{notify}
+<script>setTimeout(function(){{ try {{ window.close(); }} catch (e) {{}} }}, 1500);</script>
+</div></body></html>"""
 
 # --------------------------------------------------------------------- models
 class PostIn(BaseModel):
@@ -80,6 +106,12 @@ class AccountIn(BaseModel):
     label: str = ""
     config: Dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
+
+
+class OAuthStartIn(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
 
 
 class GenerateIn(BaseModel):
@@ -425,6 +457,84 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
         p = create_platform(platform, account["config"], state["http"])
         ok, message = p.verify()
         return {"ok": ok, "message": message}
+
+    # ------------------------------------------------------------ oauth flow
+    @app.post("/api/accounts/{platform}/oauth/start")
+    def oauth_start(platform: str, body: OAuthStartIn, request: Request):
+        """One-click connect: returns the provider's authorization URL.
+
+        The dashboard opens it in a popup; the provider redirects back to
+        ``/api/accounts/{platform}/oauth/callback`` where tokens are exchanged
+        and stored. Client id/secret are saved with the account first so the
+        callback can use them.
+        """
+        meta = platform_meta_by_name(platform)
+        if not meta or not meta.get("oauth"):
+            raise HTTPException(400, f"{platform} does not support one-click OAuth "
+                                     f"— connect it manually in the form below")
+        existing = state["store"].get_account(platform) or {"config": {}}
+        config = dict(existing.get("config", {}))
+        oauth = meta["oauth"]
+        for key, value in ((oauth.get("client_id_key", "client_id"), body.client_id),
+                           (oauth.get("client_secret_key", "client_secret"), body.client_secret)):
+            if value:
+                config[key] = value
+        if not config.get(oauth.get("client_id_key", "client_id")):
+            raise HTTPException(400, f"missing {oauth.get('client_id_key', 'client_id')} — "
+                                     f"paste it first (see the guide above)")
+        state["store"].save_account(platform, config, existing.get("label", ""),
+                                    existing.get("enabled", True))
+
+        base = str(request.base_url).rstrip("/")
+        redirect_uri = body.redirect_uri or f"{base}/api/accounts/{platform}/oauth/callback"
+        state_token = new_state()
+        try:
+            auth_url, verifier = build_auth_url(platform, config["client_id"],
+                                                redirect_uri, state_token)
+        except PlatformError as exc:
+            raise HTTPException(400, str(exc))
+        PENDING_STATES[state_token] = {"platform": platform, "redirect_uri": redirect_uri,
+                                       "verifier": verifier,
+                                       "expires": utcnow().timestamp() + STATE_TTL}
+        return {"auth_url": auth_url, "redirect_uri": redirect_uri, "state": state_token}
+
+    @app.get("/api/accounts/{platform}/oauth/callback")
+    def oauth_callback(platform: str, code: str = "",
+                       oauth_state: str = Query("", alias="state"), error: str = ""):
+        """Provider redirect target. Exchanges the code and stores the tokens."""
+        pending = PENDING_STATES.pop(oauth_state, None)
+        if pending is None or pending["platform"] != platform:
+            return HTMLResponse(_oauth_page("❌ Authorization failed",
+                                            "Unknown or expired session — start the connect flow again.",
+                                            platform))
+        if error:
+            return HTMLResponse(_oauth_page("❌ Authorization denied",
+                                            f"The provider returned: {error}. Nothing was saved.",
+                                            platform))
+        if not code:
+            return HTMLResponse(_oauth_page("❌ Missing code",
+                                            "No code received from the provider.", platform))
+        account = state["store"].get_account(platform)
+        if not account:
+            return HTMLResponse(_oauth_page("❌ No account",
+                                            f"No {platform} account found — save one first.", platform))
+        config = dict(account.get("config", {}))
+        oauth = platform_meta_by_name(platform)["oauth"]
+        cid = config.get(oauth.get("client_id_key", "client_id"), "")
+        secret = config.get(oauth.get("client_secret_key", "client_secret"), "")
+        try:
+            updates = exchange_code(platform, cid, secret, code, pending["redirect_uri"],
+                                    pending.get("verifier"), state["http"])
+        except PlatformError as exc:
+            return HTMLResponse(_oauth_page("❌ Token exchange failed", str(exc), platform))
+        config.update(updates)
+        state["store"].save_account(platform, config, account.get("label", ""),
+                                    account.get("enabled", True))
+        state["store"].log_event("account.oauth", f"{platform} connected via OAuth",
+                                 {"platform": platform})
+        return HTMLResponse(_oauth_page("✅ Connected!",
+                                        f"{platform} is now connected. You can close this window.",
+                                        platform))
 
     # ------------------------------------------------------------ bot rules
     @app.get("/api/bot/rules")

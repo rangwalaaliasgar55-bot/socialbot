@@ -121,12 +121,15 @@ def platforms():
         account = store.get_account(meta["name"])
         platform = create_platform(meta["name"], (account or {}).get("config", {}))
         state = "✅ connected" if meta["name"] in accounts and platform.is_configured() else "—"
-        rows.append((meta["icon"], meta["display_name"], meta["name"],
+        hint = f" (oauth: socialbot connect {meta['name']})" if meta.get("oauth") else ""
+        rows.append((meta["icon"], meta["display_name"] + hint, meta["name"],
                      ",".join(sorted(meta["capabilities"])), state))
     width = max(len(r[1]) for r in rows) + 2
     for icon, disp, name, caps, state in rows:
         click.echo(f"{icon} {disp:<{width}} {name:<12} {state:<12} {caps}")
     click.echo(f"\n{len(rows)} platforms supported")
+    click.echo("step-by-step guides: `socialbot connect <platform>` (OAuth) or "
+               "`socialbot accounts add <platform>` (manual, interactive)")
 
 
 # ----------------------------------------------------------------- accounts
@@ -183,6 +186,50 @@ def accounts(action: str, platform_name: Optional[str]):
         if not platform_name:
             raise click.ClickException("specify a platform: socialbot accounts remove telegram")
         click.echo("removed" if store.delete_account(platform_name) else "not found")
+
+
+# --------------------------------------------------------------------- connect
+@cli.command()
+@click.argument("platform_name", metavar="PLATFORM")
+@click.option("--port", default=8765, show_default=True,
+              help="local callback port (register this URL in your OAuth app)")
+def connect(platform_name: str, port: int):
+    """Connect a platform with one click — opens your browser for OAuth.
+
+    Like signing in with Google: you authorize on the provider's site, the
+    callback lands on a tiny local server, and SocialBot saves the tokens.
+    Supported: linkedin, twitter, youtube.
+    """
+    if platform_name not in platform_names():
+        raise click.ClickException(f"unknown platform '{platform_name}' — run `socialbot platforms`")
+    from .oauth import run_cli_flow
+    store = get_store()
+    cls = create_platform(platform_name, {})
+    if not cls.oauth:
+        raise click.ClickException(
+            f"{platform_name} has no OAuth flow — use `socialbot accounts add {platform_name}` "
+            "to enter its credentials manually")
+    meta = cls.oauth
+    existing = store.get_account(platform_name) or {"config": {}}
+    config = dict(existing.get("config", {}))
+    cid_key = meta.get("client_id_key", "client_id")
+    sec_key = meta.get("client_secret_key", "client_secret")
+    if not config.get(cid_key):
+        config[cid_key] = click.prompt(f"{cls.display_name} OAuth client id", hide_input=True)
+    if meta.get(sec_key) and not config.get(sec_key):
+        config[sec_key] = click.prompt(f"{cls.display_name} OAuth client secret", hide_input=True)
+    store.save_account(platform_name, config, existing.get("label", ""),
+                       existing.get("enabled", True))
+
+    click.echo(f"🔗 Opening browser — authorize SocialBot on {cls.display_name}…")
+    click.echo(f"   redirect URI (register this in your app): http://127.0.0.1:{port}/callback")
+    try:
+        account = run_cli_flow(platform_name, store, config, port=port)
+    except PlatformError as exc:
+        raise click.ClickException(str(exc))
+    platform = create_platform(platform_name, account["config"])
+    ok, message = platform.verify()
+    click.echo(f"✅ {platform_name} connected. verify: {'✅' if ok else '⚠️'} {message}")
 
 
 # --------------------------------------------------------------------- post

@@ -29,6 +29,27 @@ class Twitter(Platform):
         {"key": "user_id", "label": "Your user id", "required": False, "secret": False,
          "help": "Needed for like/follow bot actions"},
     ]
+    guide = [
+        "Go to developer.x.com and sign in with your X account.",
+        "Create a Project and an App inside it (the free tier is enough).",
+        "Open your app → 'User authentication settings' → Enable OAuth 2.0 (Web App).",
+        "Add the redirect URL: http://localhost:8000/api/accounts/twitter/oauth/callback "
+        "(use your dashboard's port if it differs).",
+        "In 'App permissions' tick Read, Write — and note the Client ID and Client Secret.",
+        "Easiest path: paste the Client ID + Client Secret in the fields and click "
+        "'Connect with X' — SocialBot handles authorization, tokens and auto-refresh.",
+        "Or generate a 'User access token' (scopes: tweet.read tweet.write users.read "
+        "like.write follows.write offline.access) and paste it manually with your user id.",
+    ]
+    oauth = {
+        "provider": "X",
+        "auth_url": "https://twitter.com/i/oauth2/authorize",
+        "token_url": "https://api.x.com/2/oauth2/token",
+        "scope": "tweet.read tweet.write users.read like.write follows.write offline.access",
+        "client_id_key": "client_id",
+        "client_secret_key": "client_secret",
+        "pkce": True,
+    }
 
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.require('access_token')}"}
