@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.0 — 2026-08-20
+
+Coordination, monitoring & AI content kit — ports PR #3's multi-agent layer,
+reconciled with the v1.2.0 agent engine (supersedes PR #3).
+
+- **Coordination** (`socialbot/coordination.py`): agent registration +
+  heartbeats + dead-agent detection, distributed locks backed by SQLite
+  (safe across processes; fixed cross-connection visibility + lock-leak bugs
+  from PR #3), persistent task queue with claiming, retries and stats
+- **Monitoring** (`socialbot/monitoring.py`): counters/gauges/timings,
+  component health checks, structured JSON logging, resource monitor that
+  degrades gracefully without `psutil` (optional)
+- **AI content kit** (`socialbot/ai_engine.py`): platform-aware visual
+  prompts, image generation (OpenAI or any OpenAI-compatible endpoint via
+  `OPENAI_BASE_URL` — works with Groq), captions + hashtags + SEO scoring;
+  full offline mock mode when no API key is set
+- **Real-time trend analyzer** (`socialbot/trend_analyzer.py`): Twitter/X +
+  Reddit sources (Bearer / OAuth client credentials), demo-topic fallback,
+  merged into the trends agent (`socialbot trends` / `--no-real` to disable)
+- **Scheduler**: agent runs now take the distributed lock (no double-runs
+  across API server + worker processes) and are timed via monitoring
+- **API**: `/api/agents` (workers + stats), `/api/tasks` (GET/POST/GET:id),
+  `/api/monitoring`, `/api/trends/strategy`, `/api/ai/content`
+- **CLI**: `socialbot tasks list|enqueue|stats`; `trends --no-real`
+- **Dashboard**: "Coordination & monitoring" panel (workers, task queue,
+  health) in the Agents view
+- 110 tests (was 90)
+
 ## 1.2.0 — 2026-08-20
 
 Growth & intelligence release — "agents + self-learning" edition.

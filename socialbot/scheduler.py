@@ -19,7 +19,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from .agents import AgentEngine
 from .analytics import refresh_metrics
 from .bot import BotEngine
+from .coordination import distributed_lock
 from .models import iso, utcnow
+from .monitoring import get_monitoring
 from .publisher import Publisher
 from .storage import Store
 
@@ -125,14 +127,18 @@ class Scheduler:
 
     def _run_bot_rules(self) -> None:  # pragma: no cover - optional job
         try:
-            results = BotEngine(self.store, self.publisher.http).run_all()
+            with distributed_lock("bot_rules", store=self.store):
+                results = BotEngine(self.store, self.publisher.http).run_all()
             log.info("bot rules ran: %d rule(s)", len(results))
         except Exception:
             log.exception("scheduled bot rules failed")
 
     def _run_agents(self) -> None:  # pragma: no cover - optional job
         try:
-            results = AgentEngine(self.store, self.publisher.http).run_all()
+            monitoring = get_monitoring()
+            with monitoring.track_operation("agents.run"):
+                with distributed_lock("agents_run", store=self.store):
+                    results = AgentEngine(self.store, self.publisher.http).run_all()
             log.info("agents ran: %d mention(s), %d inbox, %d competitor(s), %d trend(s)",
                      len(results["mentions"]), len(results["inbox"]),
                      len(results["competitors"]), len(results["trends"]))

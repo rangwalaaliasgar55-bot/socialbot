@@ -172,6 +172,19 @@
         </div>
         <div style="overflow-x:auto"><table id="ag-feed-table"></table></div>
       </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">Coordination &amp; monitoring</h2>
+          <button class="btn ghost small" id="ag-mon-refresh">↻ Refresh</button>
+        </div>
+        <div class="grid cols-4" id="ag-stats"></div>
+        <h3 style="margin:14px 0 6px">Workers</h3>
+        <div style="overflow-x:auto"><table id="ag-workers"></table></div>
+        <h3 style="margin:14px 0 6px">Task queue</h3>
+        <div style="overflow-x:auto"><table id="ag-task-table"></table></div>
+        <h3 style="margin:14px 0 6px">System health</h3>
+        <div style="overflow-x:auto"><table id="ag-health"></table></div>
+      </div>
       <p class="muted small">Agents run silently on the scheduler interval (or when you hit “Run all”). Every action is logged in Activity and respects blacklist/whitelist + rate limits.</p>
     </section>
 
