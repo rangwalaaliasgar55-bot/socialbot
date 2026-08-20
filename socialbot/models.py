@@ -77,6 +77,8 @@ class Post:
     thread_parts: List[str] = field(default_factory=list)   # precomputed parts (after auto-split)
     best_time: bool = False                                 # schedule at the optimal engagement window
     origin: Optional[str] = None                            # feed:name | trend:platform:topic | competitor:id
+    review_status: Optional[str] = None                     # pending | approved | rejected (agent drafts)
+    reviewed_at: Optional[str] = None                       # when the review decision was made
 
     # -- convenience -------------------------------------------------------
     def effective_text(self, platform: Optional[str] = None, account_signature: Optional[str] = None) -> str:

@@ -205,7 +205,8 @@ class RealTrendAnalyzer:
                 from .models import Post, PostStatus
                 store.save_post(Post(text=draft_text, platforms=[],
                                      status=PostStatus.DRAFT.value, tag="trend",
-                                     origin=f"trend:real:{trend.topic}"))
+                                     origin=f"trend:real:{trend.topic}",
+                                     review_status="pending"))
                 drafts_created += 1
         if captured:
             store.log_event("trends.capture", f"trend analyzer: {captured} new trend(s), "

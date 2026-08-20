@@ -16,7 +16,7 @@ from .analytics import refresh_metrics, summary, to_csv
 from .bot import BotEngine
 from .http import HttpClient
 from .models import (BotRule, CompetitorRule, FeedSource, InboxRule, MentionRule,
-                     Post, PostStatus, iso, utcnow)
+                     Post, PostStatus, iso, parse_dt, utcnow)
 from .platforms import PlatformError, create_platform, platform_meta, platform_names
 from .publisher import Publisher
 from .scheduler import Scheduler
@@ -663,6 +663,73 @@ def tasks(action: str, task_type: str, payload: str, priority: int, status: Opti
         click.echo(f"• {t.task_id}  {t.task_type}  {t.status}  "
                    f"prio={t.priority}  retries={t.retry_count}")
     click.echo(f"\nworkers: {len(coordinator.list_agents())} active")
+
+
+# ---------------------------------------------------------------- review queue
+@cli.command()
+@click.argument("action", type=click.Choice(["list", "approve", "reject"]))
+@click.argument("post_id", required=False)
+@click.option("--platforms", default="", help="comma-separated platforms to target (approve)")
+@click.option("--at", default=None, help="ISO time to schedule (approve, default: stays draft)")
+@click.option("--best-time", is_flag=True, help="schedule at your best engagement window")
+@click.option("--now", is_flag=True, help="approve and publish immediately")
+@click.option("--note", default="", help="note for the review decision")
+def review(action: str, post_id: Optional[str], platforms: str, at: Optional[str],
+           best_time: bool, now: bool, note: str):
+    """Human-in-the-loop queue for agent-generated drafts.
+
+    Agents (feeds, trends, competitors) create drafts flagged "pending review".
+    Review them here: list, then approve (optionally schedule) or reject.
+    """
+    store = get_store()
+    if action == "list":
+        pending = store.list_posts_for_review("pending")
+        approved = store.list_posts_for_review("approved")
+        if not pending and not approved:
+            click.echo("review queue is empty")
+            return
+        for post in pending:
+            click.echo(f"⏳ {post.id}  [{post.origin or 'agent'}]  {post.text[:90]}")
+        for post in approved:
+            click.echo(f"✅ {post.id}  [{post.origin or 'agent'}]  {post.text[:90]}  "
+                       f"(approved, {post.status})")
+        click.echo(f"\n{len(pending)} pending, {len(approved)} approved")
+        return
+    if not post_id:
+        raise click.ClickException("post id is required for approve/reject")
+    post = store.get_post(post_id)
+    if post is None:
+        raise click.ClickException(f"post {post_id} not found")
+    if action == "reject":
+        post.review_status = "rejected"
+        post.reviewed_at = iso(utcnow())
+        store.save_post(post)
+        store.log_event("review.reject", f"post {post.id} rejected{': ' + note if note else ''}",
+                        {"post_id": post.id, "note": note})
+        click.echo(f"❌ rejected {post.id}")
+        return
+    # approve
+    if platforms:
+        post.platforms = [p.strip() for p in platforms.split(",") if p.strip()]
+    post.review_status = "approved"
+    post.reviewed_at = iso(utcnow())
+    if now:
+        post.status = PostStatus.SCHEDULED.value
+        post.scheduled_at = iso(utcnow())
+    elif at:
+        post.status = PostStatus.SCHEDULED.value
+        post.scheduled_at = iso(parse_dt(at))
+    elif best_time:
+        from .adaptive import suggest_time
+        post.status = PostStatus.SCHEDULED.value
+        post.scheduled_at = suggest_time(store, post.platforms[0] if post.platforms else None) \
+            or iso(utcnow() + timedelta(hours=1))
+    store.save_post(post)
+    store.log_event("review.approve", f"post {post.id} approved "
+                                      f"(status={post.status}{', platforms=' + ','.join(post.platforms) if post.platforms else ''})",
+                    {"post_id": post.id, "status": post.status, "platforms": post.platforms})
+    where = f" scheduled for {post.scheduled_at}" if post.scheduled_at else ""
+    click.echo(f"✅ approved {post.id}{where}")
 
 
 # ------------------------------------------------------------------- safety

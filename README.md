@@ -102,12 +102,14 @@ The scheduler is embedded in the dashboard and CLI worker — it runs by itself:
 - optionally runs your enabled bot rules on a schedule: set `SOCIALBOT_BOT_INTERVAL=30` (minutes) — each rule still respects its dry-run/live mode and its own caps
 - runs the **background agents** (mention monitor, inbox responder, competitor watch, trends) every `SOCIALBOT_AGENTS_INTERVAL` (default 30m) — agent runs are protected by a distributed lock so the API server and CLI worker never double-run
 - captures **real-time trends** (Twitter/X + Reddit when configured, demo topics otherwise) and **RSS/curated content** into ready-to-schedule drafts
+- routes all **agent-generated drafts** through the review queue — approve or reject them from the dashboard's *Review* view (`socialbot review list|approve|reject`)
 - generates the **monthly growth report** on the 1st of each month (`SOCIALBOT_REPORT_HOUR`, default 6)
 
 ```bash
 socialbot run          # standalone worker
 socialbot dashboard    # dashboard + worker in one process
 socialbot tasks list   # inspect workers + the shared task queue
+socialbot review list  # agent drafts waiting for your approval
 ```
 
 ## 🤖 Growth bot (auto like / follow / comment)

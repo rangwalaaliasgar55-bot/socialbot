@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -179,6 +180,16 @@ class StrategyIn(BaseModel):
     target_audience: str = "general audience"
     trending_keywords: List[str] = Field(default_factory=list)
     seo_goal: str = "engagement"
+
+
+class ReviewApproveIn(BaseModel):
+    platforms: List[str] = Field(default_factory=list)
+    scheduled_at: Optional[str] = None  # ISO time, or "now" for immediate publish
+    best_time: bool = False
+
+
+class ReviewRejectIn(BaseModel):
+    note: str = ""
 
 
 # ----------------------------------------------------------------------- app
@@ -695,6 +706,55 @@ def create_app(store: Optional[Store] = None, with_scheduler: bool = True) -> Fa
             trending_keywords=body.trending_keywords, seo_goal=body.seo_goal,
         )
         return engine.create_full_content_package(strategy).to_dict()
+
+    # ------------------------------------------------------------ review queue
+    @app.get("/api/review")
+    def review_queue(limit: int = 100):
+        pending = state["store"].list_posts_for_review("pending", limit)
+        approved = state["store"].list_posts_for_review("approved", limit)
+        rejected = state["store"].list_posts_for_review("rejected", limit)
+        return {"pending": [p.to_dict() for p in pending],
+                "approved": [p.to_dict() for p in approved],
+                "rejected": [p.to_dict() for p in rejected],
+                "stats": {"pending": len(pending), "approved": len(approved),
+                          "rejected": len(rejected)}}
+
+    @app.post("/api/review/{post_id}/approve")
+    def review_approve(post_id: str, body: ReviewApproveIn):
+        post = state["store"].get_post(post_id)
+        if post is None:
+            raise HTTPException(404, "post not found")
+        if body.platforms:
+            post.platforms = body.platforms
+        post.review_status = "approved"
+        post.reviewed_at = iso(utcnow())
+        if body.scheduled_at == "now":
+            post.status = PostStatus.SCHEDULED.value
+            post.scheduled_at = iso(utcnow())
+        elif body.scheduled_at:
+            post.status = PostStatus.SCHEDULED.value
+            post.scheduled_at = iso(parse_dt(body.scheduled_at))
+        elif body.best_time:
+            from ..adaptive import suggest_time
+            post.status = PostStatus.SCHEDULED.value
+            post.scheduled_at = suggest_time(state["store"],
+                                             post.platforms[0] if post.platforms else None) \
+                or iso(utcnow() + timedelta(hours=1))
+        state["store"].save_post(post)
+        state["store"].log_event("review.approve",
+                                 f"post {post.id} approved (status={post.status})",
+                                 {"post_id": post.id, "status": post.status,
+                                  "platforms": post.platforms})
+        return post.to_dict()
+
+    @app.post("/api/review/{post_id}/reject")
+    def review_reject(post_id: str, body: ReviewRejectIn):
+        store = state["store"]
+        if not store.set_review(post_id, "rejected"):
+            raise HTTPException(404, "post not found")
+        store.log_event("review.reject", f"post {post_id} rejected{': ' + body.note if body.note else ''}",
+                        {"post_id": post_id, "note": body.note})
+        return {"ok": True, "review_status": "rejected"}
 
     return app
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.0 — 2026-08-20
+
+Human-in-the-loop review queue for agent-generated content.
+
+- **Review queue**: drafts from feeds, trends and competitor watchers now land
+  as `review_status="pending"` and wait for a human before going live — no more
+  unvetted agent content reaching your calendar
+- **Store**: `review_status` / `reviewed_at` columns (auto-migrated),
+  `list_posts_for_review()`, `set_review()`
+- **CLI**: `socialbot review list|approve|reject` — approve optionally
+  schedules (`--at`, `--best-time`, `--now`) or keeps the post as an approved
+  draft for later editing; reject takes `--note`
+- **API**: `GET /api/review` (pending/approved/rejected + stats),
+  `POST /api/review/{id}/approve` (platforms, `best_time`, `scheduled_at:
+  "now"|ISO`), `POST /api/review/{id}/reject` (note)
+- **Dashboard**: new "Review" view — pending/approved queue with one-click
+  Approve (pick platforms + timing) and Reject (with note)
+- 126 tests (was 110)
+
 ## 1.3.0 — 2026-08-20
 
 Coordination, monitoring & AI content kit — ports PR #3's multi-agent layer,

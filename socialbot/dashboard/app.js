@@ -54,7 +54,7 @@ function setView(view) {
   $(`view-${view}`).classList.remove("hidden");
   $("view-title").textContent = { calendar: "Calendar", queue: "Queue", composer: "Composer",
     accounts: "Accounts", bot: "Growth bot", agents: "Agents", analytics: "Analytics",
-    insights: "Insights", events: "Activity" }[view];
+    insights: "Insights", review: "Review", events: "Activity" }[view];
   render();
 }
 
@@ -83,6 +83,7 @@ async function render() {
   if (S.view === "agents") renderAgents();
   if (S.view === "analytics") renderAnalytics();
   if (S.view === "insights") renderInsights();
+  if (S.view === "review") renderReview();
   if (S.view === "events") renderEvents();
 }
 
@@ -857,6 +858,82 @@ $("safety-add").onclick = async () => {
   } catch (e) { toast("Error: " + e.message); }
 };
 window.delSafety = async (id) => { await api(`/api/safety/${id}`, { method: "DELETE" }); renderInsights(); };
+
+/* ----------------------------------------------------------------- review */
+$("rev-refresh").onclick = () => renderReview();
+
+function askModal(html) {
+  return new Promise((resolve) => {
+    $("modal").innerHTML = `<h2><span>Review</span><button class="close" onclick="closeModal()">✕</button></h2>
+      <div style="margin:10px 0">${html}</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" id="ask-ok">Confirm</button>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      </div>`;
+    $("modal-back").classList.add("show");
+    const done = (v) => { $("modal-back").removeEventListener("click", onBack); resolve(v); };
+    const onBack = (e) => { if (e.target === $("modal-back")) { closeModal(); done(false); } };
+    $("modal-back").addEventListener("click", onBack);
+    $("ask-ok").onclick = () => { closeModal(); done(true); };
+    $("modal").querySelector(".close").onclick = () => { closeModal(); done(false); };
+  });
+}
+
+async function renderReview() {
+  const r = await api("/api/review");
+  const rows = [
+    ...r.pending.map((p) => [p, "⏳ pending"]),
+    ...r.approved.map((p) => [p, "✅ approved"]),
+  ];
+  $("review-table").innerHTML =
+    `<tr><th>Status</th><th>Source</th><th>Text</th><th>Platforms</th><th>Actions</th></tr>` +
+    (rows.length ? rows.map(([p, badge]) => `<tr>
+      <td><span class="chip">${badge}</span></td>
+      <td class="mono small">${esc(p.origin || "agent")}</td>
+      <td>${esc(p.text.slice(0, 140))}</td>
+      <td>${platformDots(p.platforms || [])}</td>
+      <td style="white-space:nowrap">
+        <button class="btn small" onclick="approvePost('${p.id}')">✓ Approve</button>
+        <button class="btn ghost small" onclick="rejectPost('${p.id}')">✕ Reject</button>
+      </td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">Nothing to review — agents haven't drafted anything yet.</td></tr>`);
+}
+
+window.approvePost = async (postId) => {
+  const platforms = S.accounts.filter((a) => a.enabled).map((a) => a.platform);
+  const opts = { text: "Approve this agent draft?",
+    body: `
+      <p class="muted small">Connected platforms: ${platforms.length ? esc(platforms.join(", ")) : "none (mock still works)"}</p>
+      <label>Platforms (comma-separated)</label>
+      <input id="appr-platforms" value="${esc(platforms.join(","))}" />
+      <label style="margin-top:8px">When</label>
+      <select id="appr-when">
+        <option value="draft">Stay as draft (schedule later)</option>
+        <option value="best">Best engagement window</option>
+        <option value="now">Publish now</option>
+      </select>` };
+  const ok = await askModal(opts.body);
+  if (!ok) return;
+  try {
+    const plats = $("appr-platforms").value.split(",").map((s) => s.trim()).filter(Boolean);
+    const when = $("appr-when").value;
+    await api(`/api/review/${postId}/approve`, { method: "POST", body: JSON.stringify({
+      platforms: plats,
+      best_time: when === "best",
+      scheduled_at: when === "now" ? "now" : undefined }) });
+    toast("Approved"); renderReview();
+  } catch (e) { toast("Error: " + e.message); }
+};
+
+window.rejectPost = async (postId) => {
+  const ok = await askModal(`<label>Note (optional)</label><input id="rej-note" placeholder="why?" />`);
+  if (!ok) return;
+  try {
+    await api(`/api/review/${postId}/reject`, { method: "POST",
+      body: JSON.stringify({ note: $("rej-note").value }) });
+    toast("Rejected"); renderReview();
+  } catch (e) { toast("Error: " + e.message); }
+};
 
 /* ----------------------------------------------------------------- events */
 async function renderEvents() {
