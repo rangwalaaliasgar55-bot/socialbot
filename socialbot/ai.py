@@ -1,15 +1,19 @@
 """AI content generation — captions, hashtags and post ideas.
 
-Works fully offline with a template engine (no key needed). If an
-OpenAI-compatible API key is configured (OpenAI, Groq, OpenRouter, Ollama,
-LM Studio…), it is used instead for real LLM drafts.
+Works fully offline with a template engine (no key needed). Preferred path:
+sign in with your ChatGPT account (Stonic-style, no API key):
+
+    socialbot chatgpt login
+
+Tokens are stored locally. Generation uses your ChatGPT plan limits.
+Optional fallback: SOCIALBOT_AI_API_KEY for any OpenAI-compatible endpoint.
 """
 from __future__ import annotations
 
 import os
 import random
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 import requests
 
@@ -79,8 +83,42 @@ def generate_offline(topic: str, n: int = 3, tone: str = "friendly") -> List[Dic
     return drafts
 
 
+def chatgpt_available(store=None) -> bool:
+    try:
+        from .chatgpt_oauth import ChatGPTOAuth
+        return ChatGPTOAuth(store=store).is_authenticated()
+    except Exception:
+        return False
+
+
 def llm_available() -> bool:
     return bool(os.environ.get(AI_API_KEY_ENV))
+
+
+def generate_chatgpt(topic: str, n: int = 3, tone: str = "friendly", store=None) -> List[Dict[str, str]]:
+    from .chatgpt_oauth import ChatGPTOAuth
+    client = ChatGPTOAuth(store=store)
+    if not client.is_authenticated():
+        raise RuntimeError("ChatGPT not signed in")
+    prompt = (
+        f"Write {n} short social media posts about '{topic}' in a {tone} tone. "
+        "Vary the hooks (question, bold claim, list). Include line breaks, at most 2 "
+        "hashtags each, no markdown. Return them separated by '---'."
+    )
+    model = os.environ.get(AI_MODEL_ENV, "gpt-4o-mini")
+    texts = client.generate(prompt, model=model, n=1)
+    content = texts[0] if texts else ""
+    drafts = []
+    for chunk in re.split(r"\n*---+\n*", content):
+        text = chunk.strip()
+        if text:
+            tags = re.findall(r"#\w+", text)
+            drafts.append({"text": text, "hashtags": tags[:3], "engine": "chatgpt",
+                           "tone": tone})
+    if not drafts and content.strip():
+        drafts.append({"text": content.strip(), "hashtags": hashtags_for(topic, 3),
+                       "engine": "chatgpt", "tone": tone})
+    return drafts[:n] or generate_offline(topic, n, tone)
 
 
 def generate_llm(topic: str, n: int = 3, tone: str = "friendly") -> List[Dict[str, str]]:
@@ -109,11 +147,22 @@ def generate_llm(topic: str, n: int = 3, tone: str = "friendly") -> List[Dict[st
     return drafts[:n]
 
 
-def generate(topic: str, n: int = 3, tone: str = "friendly") -> List[Dict[str, str]]:
-    """Generate *n* drafts. Uses an LLM when configured, templates otherwise."""
+def generate(topic: str, n: int = 3, tone: str = "friendly", store=None) -> List[Dict[str, str]]:
+    """Generate *n* drafts.
+
+    Priority:
+      1. ChatGPT account sign-in (no API key)
+      2. SOCIALBOT_AI_API_KEY (OpenAI-compatible)
+      3. Offline templates
+    """
+    if chatgpt_available(store):
+        try:
+            return generate_chatgpt(topic, n, tone, store=store)
+        except Exception:
+            pass
     if llm_available():
         try:
             return generate_llm(topic, n, tone)
         except Exception:
-            pass  # fall back to offline drafts
+            pass
     return generate_offline(topic, n, tone)
