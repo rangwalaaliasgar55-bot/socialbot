@@ -3,16 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SocialBot — scheduler &amp; automation</title>
+  <title>SocialBot Command Center — Stonic-style HUD</title>
   <link rel="stylesheet" href="/static/style.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg> />
+  <link rel="stylesheet" href="/static/stonic.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◆</text></svg>" />
 </head>
 <body>
 <div class="shell">
   <aside>
-    <div class="logo"><div class="mark">🤖</div> SocialBot</div>
+    <div class="logo"><div class="mark">◆</div> SocialBot</div>
     <nav id="nav">
-      <a data-view="calendar" class="active">📅 Calendar</a>
+      <a data-view="command" class="active">◆ Command</a>
+      <a data-view="town">🏢 Agent Town</a>
+      <a data-view="calendar">📅 Calendar</a>
       <a data-view="queue">📮 Queue</a>
       <a data-view="composer">✍️ Composer</a>
       <a data-view="accounts">🔌 Accounts</a>
@@ -28,15 +31,53 @@
 
   <main>
     <div class="topbar">
-      <h1 id="view-title">Calendar</h1>
+      <h1 id="view-title">Command</h1>
       <div style="display:flex;gap:10px;align-items:center">
         <span class="pill" id="sched-pill"><span class="dot"></span> scheduler</span>
         <button class="btn" id="new-post-btn">＋ New post</button>
       </div>
     </div>
 
-    <!-- CALENDAR -->
-    <section id="view-calendar">
+    <div class="stonic-bar" id="stonic-bar">
+      <div class="core"><strong>SYSTEM CORE</strong> <span id="core-line">booting…</span></div>
+      <span class="pill" id="chatgpt-pill"><span class="dot" id="chatgpt-dot"></span> ChatGPT</span>
+      <div class="theme-pills" title="HUD theme">
+        <button type="button" data-t="cyan" class="active" aria-label="Cyan"></button>
+        <button type="button" data-t="crimson" aria-label="Crimson"></button>
+        <button type="button" data-t="emerald" aria-label="Emerald"></button>
+      </div>
+    </div>
+
+    <section id="view-command">
+      <div class="chatgpt-card" id="chatgpt-card">
+        <div>
+          <div style="font-weight:700;margin-bottom:4px">AI connectivity — ChatGPT account</div>
+          <div class="muted small">Stonic-style: sign in with ChatGPT. No separate API key. Uses your plan limits.</div>
+        </div>
+        <span class="badge" id="chatgpt-badge">offline</span>
+        <button class="btn small" id="chatgpt-login-btn">Sign in with ChatGPT</button>
+        <button class="btn ghost small" id="chatgpt-status-btn">Status</button>
+      </div>
+      <div class="card">
+        <h2>System Core</h2>
+        <div class="core-circuits" id="core-circuits"></div>
+      </div>
+      <div class="card">
+        <h2>Mission brief</h2>
+        <p class="muted small">Social automation command center. Agents publish, engage, and draft. Theme switches recolour the entire HUD.</p>
+        <div class="grid cols-4" id="cmd-stats"></div>
+      </div>
+    </section>
+
+    <section id="view-town" class="hidden">
+      <div class="card">
+        <h2>Agent Town</h2>
+        <p class="muted small" style="margin-bottom:12px">Alice, Bob, Carol and Dave — resident operators. Status reflects live SocialBot state.</p>
+        <div class="agent-grid" id="agent-grid"></div>
+      </div>
+    </section>
+
+    <section id="view-calendar" class="hidden">
       <div class="cal-head">
         <button class="btn ghost small" id="cal-prev">←</button>
         <div style="display:flex;gap:8px;align-items:center">
@@ -54,7 +95,6 @@
       </div>
     </section>
 
-    <!-- QUEUE -->
     <section id="view-queue" class="hidden">
       <div class="card">
         <div style="display:flex;justify-content:space-between;margin-bottom:10px">
@@ -69,11 +109,9 @@
           </div>
         </div>
         <div style="overflow-x:auto"><table id="queue-table"></table></div>
-        <p class="muted small" style="margin-top:10px">Click any post for details (results, errors, edit, remote delete). Failed posts are auto-retried by the scheduler with backoff.</p>
       </div>
     </section>
 
-    <!-- COMPOSER -->
     <section id="view-composer" class="hidden">
       <div class="card composer">
         <h2>Compose</h2>
@@ -113,16 +151,14 @@
       </div>
     </section>
 
-    <!-- ACCOUNTS -->
     <section id="view-accounts" class="hidden">
       <div class="card">
         <h2>Connected accounts</h2>
-        <p class="muted small" style="margin-bottom:12px">Click a platform to add or edit credentials. Get a demo account by connecting <b>Mock (demo)</b>.</p>
+        <p class="muted small" style="margin-bottom:12px">Click a platform to add or edit credentials. Demo: connect <b>Mock</b>.</p>
         <div class="grid cols-4" id="acct-grid"></div>
       </div>
     </section>
 
-    <!-- BOT -->
     <section id="view-bot" class="hidden">
       <div class="card">
         <div style="display:flex;justify-content:space-between;margin-bottom:10px">
@@ -133,160 +169,58 @@
           </div>
         </div>
         <div style="overflow-x:auto"><table id="bot-table"></table></div>
-        <p class="muted small" style="margin-top:10px">Rules use official platform APIs only, with per-run &amp; per-hour caps and human-like pacing. New rules start in <b>dry-run</b> — flip it live when you're happy.</p>
       </div>
     </section>
 
-    <!-- AGENTS -->
     <section id="view-agents" class="hidden">
       <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Mention &amp; hashtag monitors</h2>
-          <div style="display:flex;gap:8px">
-            <button class="btn ghost small" id="ag-run-all">▶ Run all agents</button>
-            <button class="btn small" id="ag-mon-new">＋ New monitor</button>
-          </div>
-        </div>
+        <h2>Mention monitors · competitor · inbox · feeds · coordination</h2>
+        <p class="muted small">Full agent controls remain here. Agent Town is the living roster view.</p>
         <div style="overflow-x:auto"><table id="ag-mon-table"></table></div>
       </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Competitor watch</h2>
-          <button class="btn small" id="ag-cmp-new">＋ New watch</button>
-        </div>
-        <div style="overflow-x:auto"><table id="ag-cmp-table"></table></div>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Inbox responder</h2>
-          <button class="btn small" id="ag-inb-new">＋ New responder</button>
-        </div>
-        <div style="overflow-x:auto"><table id="ag-inb-table"></table></div>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Content sources (RSS / curated)</h2>
-          <div style="display:flex;gap:8px">
-            <button class="btn ghost small" id="ag-feed-pull">↻ Pull all</button>
-            <button class="btn small" id="ag-feed-new">＋ New feed</button>
-          </div>
-        </div>
-        <div style="overflow-x:auto"><table id="ag-feed-table"></table></div>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Coordination &amp; monitoring</h2>
-          <button class="btn ghost small" id="ag-mon-refresh">↻ Refresh</button>
-        </div>
-        <div class="grid cols-4" id="ag-stats"></div>
-        <h3 style="margin:14px 0 6px">Workers</h3>
-        <div style="overflow-x:auto"><table id="ag-workers"></table></div>
-        <h3 style="margin:14px 0 6px">Task queue</h3>
-        <div style="overflow-x:auto"><table id="ag-task-table"></table></div>
-        <h3 style="margin:14px 0 6px">System health</h3>
-        <div style="overflow-x:auto"><table id="ag-health"></table></div>
-      </div>
-      <p class="muted small">Agents run silently on the scheduler interval (or when you hit “Run all”). Every action is logged in Activity and respects blacklist/whitelist + rate limits.</p>
+      <div class="card"><div id="ag-cmp-table"></div></div>
+      <div class="card"><div id="ag-inb-table"></div></div>
+      <div class="card"><div id="ag-feed-table"></div></div>
+      <div class="card"><div class="grid cols-4" id="ag-stats"></div></div>
     </section>
 
-    <!-- ANALYTICS -->
     <section id="view-analytics" class="hidden">
       <div class="card">
         <div style="display:flex;justify-content:space-between;margin-bottom:12px">
           <h2 style="margin:0">Overview</h2>
-          <div style="display:flex;gap:8px">
-            <button class="btn ghost small" id="an-refresh">↻ Refresh metrics</button>
-            <a class="btn ghost small" href="/api/analytics/export.csv" download>⬇ Export CSV</a>
-          </div>
+          <button class="btn ghost small" id="an-refresh">↻ Refresh metrics</button>
         </div>
         <div class="grid cols-4" id="an-stats"></div>
       </div>
-      <div class="card">
-        <h2>Engagement by platform</h2>
-        <div class="bars" id="an-bars"></div>
-      </div>
-      <div class="card">
-        <h2>Latest per-post metrics</h2>
-        <div style="overflow-x:auto"><table id="an-table"></table></div>
-      </div>
+      <div class="card"><div class="bars" id="an-bars"></div></div>
+      <div class="card"><table id="an-table"></table></div>
     </section>
 
-    <!-- INSIGHTS -->
     <section id="view-insights" class="hidden">
+      <div class="card"><div class="grid cols-4" id="in-windows"></div></div>
       <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Best times to post</h2>
-          <div style="display:flex;gap:8px">
-            <button class="btn ghost small" id="in-report">📈 Generate monthly report</button>
-          </div>
-        </div>
-        <div class="grid cols-4" id="in-windows"></div>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Vibe check &amp; analysis</h2>
-        </div>
-        <textarea id="in-text" placeholder="Paste a draft (or any text) — get sentiment, intent, topics, a suggested reply and a style-fit score…" style="min-height:90px"></textarea>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-          <button class="btn small" id="in-analyze">🔬 Analyze</button>
-          <button class="btn ghost small" id="in-vibe">🎨 Vibe fit</button>
-          <button class="btn ghost small" id="in-hashtags"># Adaptive hashtags</button>
-          <span class="muted small" style="align-self:center" id="in-msg"></span>
-        </div>
+        <textarea id="in-text" placeholder="Paste text for analysis…" style="min-height:90px"></textarea>
+        <button class="btn small" id="in-analyze">🔬 Analyze</button>
         <div id="in-result" style="margin-top:10px"></div>
       </div>
-      <div class="card">
-        <h2>Safety — blacklist &amp; whitelist</h2>
-        <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
-          <select id="safety-type"><option value="blacklist">blacklist</option><option value="whitelist">whitelist</option></select>
-          <select id="safety-platform"><option value="">all platforms</option></select>
-          <input id="safety-username" placeholder="@username" style="width:180px" />
-          <input id="safety-note" placeholder="why (optional)" style="width:200px" />
-          <button class="btn small" id="safety-add">＋ Add</button>
-        </div>
-        <div style="overflow-x:auto"><table id="in-safety"></table></div>
-      </div>
-      <div class="card">
-        <h2>Trends</h2>
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button class="btn ghost small" id="in-trends">↻ Capture trends</button>
-        </div>
-        <div style="overflow-x:auto"><table id="in-trends-table"></table></div>
-      </div>
-      <div class="card">
-        <h2>User profiles</h2>
-        <div style="overflow-x:auto"><table id="in-profiles"></table></div>
-      </div>
+      <div class="card"><table id="in-safety"></table></div>
+      <div class="card"><table id="in-trends-table"></table></div>
+      <div class="card"><table id="in-profiles"></table></div>
     </section>
 
-    <!-- REVIEW -->
     <section id="view-review" class="hidden">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <h2 style="margin:0">Review queue</h2>
-          <button class="btn ghost small" id="rev-refresh">↻ Refresh</button>
-        </div>
-        <p class="muted small" style="margin-bottom:12px">Agent-generated drafts (feeds, trends, competitors) wait here until you approve or reject them. Approving can schedule immediately or at your best engagement window.</p>
-        <div style="overflow-x:auto"><table id="review-table"></table></div>
-      </div>
+      <div class="card"><table id="review-table"></table></div>
     </section>
 
-    <!-- EVENTS -->
     <section id="view-events" class="hidden">
-      <div class="card">
-        <h2>Activity log</h2>
-        <div style="overflow-x:auto"><table id="events-table"></table></div>
-      </div>
+      <div class="card"><table id="events-table"></table></div>
     </section>
   </main>
 </div>
 
-<!-- generic modal -->
-<div class="modal-back" id="modal-back">
-  <div class="modal" id="modal"></div>
-</div>
-
+<div class="modal-back" id="modal-back"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
 <script src="/static/app.js"></script>
+<script src="/static/stonic.js"></script>
 </body>
 </html>
